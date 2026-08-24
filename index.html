@@ -1,0 +1,2124 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='14,20 14,80 50,50' fill='%235B3A8E'/%3E%3Cpolygon points='86,20 86,80 50,50' fill='%23FF6B4A'/%3E%3Ccircle cx='50' cy='50' r='7' fill='white' stroke='%23EFE4F2' stroke-width='1.5'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<title>Twinventure prototipo</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+  html { overscroll-behavior-y: none; }
+  body { background: linear-gradient(160deg, #FFF1E6 0%, #FFF8F0 45%, #F4EEFF 100%); font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 0; min-height: 100vh; overscroll-behavior-y: none; }
+  button { cursor: pointer; font-family: inherit; }
+  input, select, textarea, button { outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: #FF6B4A !important; }
+  ::-webkit-scrollbar { width: 6px; }
+  @keyframes tvFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes tvPopIn { from { opacity: 0; transform: scale(0.9) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  @keyframes tvAvatarInLeft { from { opacity: 0; transform: translateX(-30px) rotate(-8deg) scale(0.7); } to { opacity: 1; transform: translateX(0) rotate(-8deg) scale(1); } }
+  @keyframes tvAvatarInRight { from { opacity: 0; transform: translateX(30px) rotate(8deg) scale(0.7); } to { opacity: 1; transform: translateX(0) rotate(8deg) scale(1); } }
+  .leaflet-marker-icon, .leaflet-div-icon, .marker-cluster, .marker-cluster div {
+    background: none !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  .leaflet-container, .leaflet-container *, .leaflet-interactive, .marker-cluster {
+    -webkit-tap-highlight-color: transparent !important;
+  }
+  .leaflet-marker-icon:focus, .leaflet-div-icon:focus, .marker-cluster:focus, .marker-cluster div:focus {
+    outline: none !important;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const h = React.createElement;
+const useState = React.useState;
+const useRef = React.useRef;
+const useEffect = React.useEffect;
+
+const SUPABASE_URL = "https://jejkplqnwunqbyjkrhpy.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImplamtwbHFud3VucWJ5amtyaHB5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5ODIyNDAsImV4cCI6MjEwMTU1ODI0MH0.rlRSrqNbWzCKWbz9FmfH1OB-LOaD-yqMjmJZPf6KHxE";
+const twinventureDb = (typeof window !== "undefined" && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+function loadLS(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+}
+function saveLS(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+}
+
+const INK = "#2A2140", MUTED = "#8A8199", CARD = "#FFFFFF";
+const PLUM = "#5B3A8E", PLUM_BG = "#EFE7FA";
+const CORAL = "#FF6B4A", GOLD = "#FFB648";
+const CORAL_BG = "#FFE9E1";
+const BORDER = "#EFE4F2";
+const GRADIENT = "linear-gradient(135deg, " + CORAL + " 0%, " + GOLD + " 100%)";
+const SHADOW = "0 8px 24px rgba(91, 58, 142, 0.10)";
+const ROLE_OPTIONS = ["Capital/idea", "Local presence", "Supplier network", "Technical skills", "Equal co-founding"];
+const GENDER_OPTIONS = ["Male", "Female", "Non-binary", "Other"];
+const SUGGESTED_INDUSTRIES = ["HVAC", "E-commerce", "Restaurants", "Import/export", "Construction", "Logistics", "Fashion", "Agri-food", "Tourism", "Renewable Energy", "Technology", "Consulting"];
+const SUGGESTED_LANGUAGES = ["Italiano", "Inglese", "Tedesco", "Francese", "Spagnolo", "Cinese (Mandarino)", "Portoghese", "Russo", "Arabo", "Hindi"];
+
+const LANG_OPTIONS = [
+  { code:"it", label:"Italiano" },
+  { code:"en", label:"English" },
+  { code:"es", label:"Español" },
+  { code:"fr", label:"Français" },
+  { code:"de", label:"Deutsch" },
+  { code:"pt", label:"Português" },
+];
+
+const I18N = {
+  it: {
+    welcomeTitle:"L'app per chi vuole fare impresa in un altro paese",
+    welcomeDesc:"Twinventure mette in contatto imprenditori agli inizi, in paesi diversi, con la stessa fame di costruire qualcosa da zero. Puoi aprire insieme a qualcuno, ognuno nel paese dell'altro, oppure trovare chi ha esattamente cio che ti manca: capitale, presenza locale, o un socio alla pari.",
+    feature1Title:"Trova il socio giusto, non un contatto a caso", feature1Text:"Il match si basa su settore, ambizione e su cosa offri e cerchi in un partner, non solo su una foto.",
+    feature2Title:"Espanditi in due paesi insieme", feature2Text:"Trova qualcuno agli inizi come te in un altro paese: apri una sede da lui, lui una da te. Due mercati, una sola idea.",
+    feature3Title:"Profili verificati", feature3Text:"Numero di telefono e identita verificabili, cosi sai che dall'altra parte c'e una persona reale prima di impegnarti.",
+    feature4Title:"Dal match alla prima chiamata", feature4Text:"Chat integrata, aggiornamenti sul profilo di chi ti interessa, e tutto quello che serve per capire se ha senso partire insieme.",
+    start:"Inizia", login:"Accedi", register:"Registrati", welcomeBack:"Bentornato", createAccount:"Crea il tuo account",
+    authDesc:"Accedi con un codice mandato alla tua email, niente password da ricordare.", email:"Email", sendCode:"Send code via email",
+    navDiscover:"Discover", navMap:"Mappa", navLikes:"Ricevuti", navChat:"Chat", navProfile:"Profilo", back:"Back",
+    chooseLang:"Scegli la lingua dell'app",
+  },
+  en: {
+    welcomeTitle:"The app for entrepreneurs expanding abroad",
+    welcomeDesc:"Twinventure connects early-stage entrepreneurs in different countries who share the same drive to build something from scratch. Open a business together, one in each other's country, or find exactly what you're missing: capital, local presence, or an equal co-founder.",
+    feature1Title:"Find the right partner, not a random contact", feature1Text:"Matching is based on industry, ambition, and what you offer and look for in a partner, not just a photo.",
+    feature2Title:"Expand into two countries together", feature2Text:"Find someone at the same stage as you in another country: you open a branch there, they open one here. Two markets, one idea.",
+    feature3Title:"Verified profiles", feature3Text:"Verifiable phone number and identity, so you know there's a real person before you commit.",
+    feature4Title:"From match to first call", feature4Text:"Built-in chat, profile updates on people you're interested in, and everything you need to see if it's worth starting together.",
+    start:"Get started", login:"Log in", register:"Sign up", welcomeBack:"Welcome back", createAccount:"Create your account",
+    authDesc:"Log in with a code sent to your email, no password to remember.", email:"Email", sendCode:"Send code via email",
+    navDiscover:"Discover", navMap:"Map", navLikes:"Likes", navChat:"Chat", navProfile:"Profile", back:"Back",
+    chooseLang:"Choose the app language",
+  },
+  es: {
+    welcomeTitle:"La app para quienes quieren emprender en otro pais",
+    welcomeDesc:"Twinventure conecta a emprendedores en etapa inicial, en paises diferentes, con las mismas ganas de construir algo desde cero. Puedes abrir un negocio junto a alguien, cada uno en el pais del otro, o encontrar justo lo que te falta: capital, presencia local, o un socio en igualdad de condiciones.",
+    feature1Title:"Encuentra al socio adecuado, no un contacto al azar", feature1Text:"El match se basa en el sector, la ambicion y lo que ofreces y buscas en un socio, no solo en una foto.",
+    feature2Title:"Expandete a dos paises juntos", feature2Text:"Encuentra a alguien que este empezando como tu en otro pais: abre una sede alli, el abre una aqui. Dos mercados, una sola idea.",
+    feature3Title:"Perfiles verificados", feature3Text:"Numero de telefono e identidad verificables, para saber que hay una persona real antes de comprometerte.",
+    feature4Title:"Del match a la primera llamada", feature4Text:"Chat integrado, actualizaciones del perfil de quien te interesa, y todo lo necesario para ver si tiene sentido empezar juntos.",
+    start:"Empezar", login:"Iniciar sesion", register:"Registrarse", welcomeBack:"Bienvenido de nuevo", createAccount:"Crea tu cuenta",
+    authDesc:"Accede con un codigo enviado a tu correo, sin contrasena que recordar.", email:"Correo electronico", sendCode:"Enviar codigo por correo",
+    navDiscover:"Descubrir", navMap:"Mapa", navLikes:"Me gusta", navChat:"Chat", navProfile:"Perfil", back:"Atras",
+    chooseLang:"Elige el idioma de la app",
+  },
+  fr: {
+    welcomeTitle:"L'app pour ceux qui veulent entreprendre dans un autre pays",
+    welcomeDesc:"Twinventure met en relation des entrepreneurs debutants, dans des pays differents, avec la meme envie de construire quelque chose a partir de zero. Ouvrez une entreprise ensemble, chacun dans le pays de l'autre, ou trouvez exactement ce qui vous manque : capital, presence locale, ou un associe a parts egales.",
+    feature1Title:"Trouvez le bon associe, pas un contact au hasard", feature1Text:"Le match repose sur le secteur, l'ambition et ce que vous offrez et recherchez chez un partenaire, pas seulement une photo.",
+    feature2Title:"Developpez-vous dans deux pays ensemble", feature2Text:"Trouvez quelqu'un au meme stade que vous dans un autre pays : vous ouvrez une antenne la-bas, il en ouvre une ici. Deux marches, une seule idee.",
+    feature3Title:"Profils verifies", feature3Text:"Numero de telephone et identite verifiables, pour savoir qu'il y a une vraie personne en face avant de vous engager.",
+    feature4Title:"Du match au premier appel", feature4Text:"Chat integre, mises a jour du profil des personnes qui vous interessent, et tout ce qu'il faut pour savoir si ca vaut la peine de se lancer ensemble.",
+    start:"Commencer", login:"Se connecter", register:"S'inscrire", welcomeBack:"Bon retour", createAccount:"Creez votre compte",
+    authDesc:"Connectez-vous avec un code envoye par email, aucun mot de passe a retenir.", email:"Email", sendCode:"Envoyer le code par email",
+    navDiscover:"Decouvrir", navMap:"Carte", navLikes:"Likes", navChat:"Chat", navProfile:"Profil", back:"Retour",
+    chooseLang:"Choisissez la langue de l'application",
+  },
+  de: {
+    welcomeTitle:"Die App fuer alle, die im Ausland ein Unternehmen gruenden wollen",
+    welcomeDesc:"Twinventure verbindet Unternehmer am Anfang ihrer Reise, in verschiedenen Laendern, mit dem gleichen Antrieb, etwas von Grund auf aufzubauen. Gruende gemeinsam ein Unternehmen, jeder im Land des anderen, oder finde genau das, was dir fehlt: Kapital, lokale Praesenz oder einen gleichberechtigten Partner.",
+    feature1Title:"Finde den richtigen Partner, keinen Zufallskontakt", feature1Text:"Das Match basiert auf Branche, Ambition und dem, was du in einem Partner anbietest und suchst, nicht nur auf einem Foto.",
+    feature2Title:"Gemeinsam in zwei Laender expandieren", feature2Text:"Finde jemanden am gleichen Punkt wie du in einem anderen Land: du eroeffnest dort einen Standort, er eroeffnet einen hier. Zwei Maerkte, eine Idee.",
+    feature3Title:"Verifizierte Profile", feature3Text:"Ueberpruefbare Telefonnummer und Identitaet, damit du weisst, dass eine echte Person dahintersteckt, bevor du dich verpflichtest.",
+    feature4Title:"Vom Match zum ersten Anruf", feature4Text:"Integrierter Chat, Profil-Updates zu Personen, die dich interessieren, und alles, was du brauchst, um zu sehen, ob es sich lohnt, gemeinsam zu starten.",
+    start:"Loslegen", login:"Anmelden", register:"Registrieren", welcomeBack:"Willkommen zurueck", createAccount:"Erstelle dein Konto",
+    authDesc:"Melde dich mit einem Code an, der an deine E-Mail gesendet wird, kein Passwort noetig.", email:"E-Mail", sendCode:"Code per E-Mail senden",
+    navDiscover:"Entdecken", navMap:"Karte", navLikes:"Likes", navChat:"Chat", navProfile:"Profil", back:"Zurueck",
+    chooseLang:"Wahle die Sprache der App",
+  },
+  pt: {
+    welcomeTitle:"O app para quem quer empreender em outro pais",
+    welcomeDesc:"Twinventure conecta empreendedores em fase inicial, em paises diferentes, com a mesma vontade de construir algo do zero. Abra um negocio junto com alguem, cada um no pais do outro, ou encontre exatamente o que falta para voce: capital, presenca local, ou um socio em igualdade de condicoes.",
+    feature1Title:"Encontre o socio certo, nao um contato aleatorio", feature1Text:"O match se baseia no setor, na ambicao e no que voce oferece e procura em um parceiro, nao apenas em uma foto.",
+    feature2Title:"Expanda-se para dois paises juntos", feature2Text:"Encontre alguem no mesmo estagio que voce em outro pais: voce abre uma filial la, ele abre uma aqui. Dois mercados, uma unica ideia.",
+    feature3Title:"Perfis verificados", feature3Text:"Numero de telefone e identidade verificaveis, para voce saber que ha uma pessoa real do outro lado antes de se comprometer.",
+    feature4Title:"Do match a primeira ligacao", feature4Text:"Chat integrado, atualizacoes de perfil de quem te interessa, e tudo o que voce precisa para saber se vale a pena comecar juntos.",
+    start:"Comecar", login:"Entrar", register:"Cadastre-se", welcomeBack:"Bem-vindo de volta", createAccount:"Crie sua conta",
+    authDesc:"Entre com um codigo enviado ao seu email, sem senha para lembrar.", email:"Email", sendCode:"Enviar codigo por email",
+    navDiscover:"Descobrir", navMap:"Mapa", navLikes:"Curtidas", navChat:"Chat", navProfile:"Perfil", back:"Voltar",
+    chooseLang:"Escolha o idioma do app",
+  },
+};
+const MATCH_PHRASES = ["Let's build something!", "Two visions, one path.", "It starts here.", "Your next partner is waiting for you.", "From scratch, but together.", "The start of something big.", "Same hunger, same goal."];
+const NAV_H = 68;
+
+const COUNTRIES = ["Anywhere","Afghanistan","Albania","Algeria","Andorra","Angola","Antigua and Barbuda","Saudi Arabia","Argentina","Armenia","Australia","Austria","Azerbaijan","Bahamas","Bahrain","Bangladesh","Barbados","Belgium","Belize","Benin","Bhutan","Belarus","Myanmar","Bolivia","Bosnia and Herzegovina","Botswana","Brazil","Brunei","Bulgaria","Burkina Faso","Burundi","Cambodia","Cameroon","Canada","Cape Verde","Chad","Chile","China","Cyprus","Colombia","Comoros","North Korea","South Korea","Ivory Coast","Costa Rica","Croatia","Cuba","Denmark","Dominica","Ecuador","Egypt","El Salvador","United Arab Emirates","Eritrea","Estonia","Eswatini","Ethiopia","Fiji","Philippines","Finland","France","Gabon","Gambia","Georgia","Germany","Ghana","Jamaica","Japan","Djibouti","Jordan","Greece","Grenada","Guatemala","Guinea","Guinea-Bissau","Equatorial Guinea","Guyana","Haiti","Honduras","India","Indonesia","Iran","Iraq","Ireland","Iceland","Marshall Islands","Solomon Islands","Israel","Italy","Kazakhstan","Kenya","Kyrgyzstan","Kiribati","Kosovo","Kuwait","Laos","Lesotho","Latvia","Lebanon","Liberia","Libya","Liechtenstein","Lithuania","Luxembourg","North Macedonia","Madagascar","Malawi","Malaysia","Maldives","Mali","Malta","Morocco","Mauritania","Mauritius","Mexico","Micronesia","Moldova","Monaco","Mongolia","Montenegro","Mozambique","Namibia","Nauru","Nepal","Nicaragua","Niger","Nigeria","Norway","New Zealand","Oman","Netherlands","Pakistan","Palau","Panama","Papua New Guinea","Paraguay","Peru","Poland","Portugal","Qatar","United Kingdom","Central African Republic","Czech Republic","Republic of the Congo","Democratic Republic of the Congo","Dominican Republic","Romania","Rwanda","Russia","Saint Kitts and Nevis","Saint Vincent and the Grenadines","Saint Lucia","Samoa","San Marino","Sao Tome and Principe","Senegal","Serbia","Seychelles","Sierra Leone","Singapore","Syria","Slovakia","Slovenia","Somalia","Spain","Sri Lanka","United States","South Africa","Sudan","South Sudan","Suriname","Sweden","Switzerland","Tajikistan","Taiwan","Tanzania","Thailand","East Timor","Togo","Tonga","Trinidad and Tobago","Tunisia","Turkey","Turkmenistan","Tuvalu","Ukraine","Uganda","Hungary","Uruguay","Uzbekistan","Vanuatu","Vatican City","Venezuela","Vietnam","Yemen","Zambia","Zimbabwe"];
+
+const DIAL_CODES = [
+  {country:"Afghanistan",code:"+93"},{country:"Albania",code:"+355"},{country:"Algeria",code:"+213"},{country:"Andorra",code:"+376"},{country:"Angola",code:"+244"},
+  {country:"Antigua and Barbuda",code:"+1268"},{country:"Saudi Arabia",code:"+966"},{country:"Argentina",code:"+54"},{country:"Armenia",code:"+374"},{country:"Australia",code:"+61"},
+  {country:"Austria",code:"+43"},{country:"Azerbaijan",code:"+994"},{country:"Bahamas",code:"+1242"},{country:"Bahrain",code:"+973"},{country:"Bangladesh",code:"+880"},
+  {country:"Barbados",code:"+1246"},{country:"Belgium",code:"+32"},{country:"Belize",code:"+501"},{country:"Benin",code:"+229"},{country:"Bhutan",code:"+975"},
+  {country:"Belarus",code:"+375"},{country:"Myanmar",code:"+95"},{country:"Bolivia",code:"+591"},{country:"Bosnia and Herzegovina",code:"+387"},{country:"Botswana",code:"+267"},
+  {country:"Brazil",code:"+55"},{country:"Brunei",code:"+673"},{country:"Bulgaria",code:"+359"},{country:"Burkina Faso",code:"+226"},{country:"Burundi",code:"+257"},
+  {country:"Cambodia",code:"+855"},{country:"Cameroon",code:"+237"},{country:"Canada",code:"+1"},{country:"Cape Verde",code:"+238"},{country:"Chad",code:"+235"},
+  {country:"Chile",code:"+56"},{country:"China",code:"+86"},{country:"Cyprus",code:"+357"},{country:"Colombia",code:"+57"},{country:"Comoros",code:"+269"},
+  {country:"North Korea",code:"+850"},{country:"South Korea",code:"+82"},{country:"Ivory Coast",code:"+225"},{country:"Costa Rica",code:"+506"},{country:"Croatia",code:"+385"},
+  {country:"Cuba",code:"+53"},{country:"Denmark",code:"+45"},{country:"Dominica",code:"+1767"},{country:"Ecuador",code:"+593"},{country:"Egypt",code:"+20"},
+  {country:"El Salvador",code:"+503"},{country:"United Arab Emirates",code:"+971"},{country:"Eritrea",code:"+291"},{country:"Estonia",code:"+372"},{country:"Eswatini",code:"+268"},
+  {country:"Ethiopia",code:"+251"},{country:"Fiji",code:"+679"},{country:"Philippines",code:"+63"},{country:"Finland",code:"+358"},{country:"France",code:"+33"},
+  {country:"Gabon",code:"+241"},{country:"Gambia",code:"+220"},{country:"Georgia",code:"+995"},{country:"Germany",code:"+49"},{country:"Ghana",code:"+233"},
+  {country:"Jamaica",code:"+1876"},{country:"Japan",code:"+81"},{country:"Djibouti",code:"+253"},{country:"Jordan",code:"+962"},{country:"Greece",code:"+30"},
+  {country:"Grenada",code:"+1473"},{country:"Guatemala",code:"+502"},{country:"Guinea",code:"+224"},{country:"Guinea-Bissau",code:"+245"},{country:"Equatorial Guinea",code:"+240"},
+  {country:"Guyana",code:"+592"},{country:"Haiti",code:"+509"},{country:"Honduras",code:"+504"},{country:"India",code:"+91"},{country:"Indonesia",code:"+62"},
+  {country:"Iran",code:"+98"},{country:"Iraq",code:"+964"},{country:"Ireland",code:"+353"},{country:"Iceland",code:"+354"},{country:"Marshall Islands",code:"+692"},
+  {country:"Solomon Islands",code:"+677"},{country:"Israel",code:"+972"},{country:"Italy",code:"+39"},{country:"Kazakhstan",code:"+7"},{country:"Kenya",code:"+254"},
+  {country:"Kyrgyzstan",code:"+996"},{country:"Kiribati",code:"+686"},{country:"Kosovo",code:"+383"},{country:"Kuwait",code:"+965"},{country:"Laos",code:"+856"},
+  {country:"Lesotho",code:"+266"},{country:"Latvia",code:"+371"},{country:"Lebanon",code:"+961"},{country:"Liberia",code:"+231"},{country:"Libya",code:"+218"},
+  {country:"Liechtenstein",code:"+423"},{country:"Lithuania",code:"+370"},{country:"Luxembourg",code:"+352"},{country:"North Macedonia",code:"+389"},{country:"Madagascar",code:"+261"},
+  {country:"Malawi",code:"+265"},{country:"Malaysia",code:"+60"},{country:"Maldives",code:"+960"},{country:"Mali",code:"+223"},{country:"Malta",code:"+356"},
+  {country:"Morocco",code:"+212"},{country:"Mauritania",code:"+222"},{country:"Mauritius",code:"+230"},{country:"Mexico",code:"+52"},{country:"Micronesia",code:"+691"},
+  {country:"Moldova",code:"+373"},{country:"Monaco",code:"+377"},{country:"Mongolia",code:"+976"},{country:"Montenegro",code:"+382"},{country:"Mozambique",code:"+258"},
+  {country:"Namibia",code:"+264"},{country:"Nauru",code:"+674"},{country:"Nepal",code:"+977"},{country:"Nicaragua",code:"+505"},{country:"Niger",code:"+227"},
+  {country:"Nigeria",code:"+234"},{country:"Norway",code:"+47"},{country:"New Zealand",code:"+64"},{country:"Oman",code:"+968"},{country:"Netherlands",code:"+31"},
+  {country:"Pakistan",code:"+92"},{country:"Palau",code:"+680"},{country:"Panama",code:"+507"},{country:"Papua New Guinea",code:"+675"},{country:"Paraguay",code:"+595"},
+  {country:"Peru",code:"+51"},{country:"Poland",code:"+48"},{country:"Portugal",code:"+351"},{country:"Qatar",code:"+974"},{country:"United Kingdom",code:"+44"},
+  {country:"Central African Republic",code:"+236"},{country:"Czech Republic",code:"+420"},{country:"Republic of the Congo",code:"+242"},{country:"Democratic Republic of the Congo",code:"+243"},{country:"Dominican Republic",code:"+1809"},
+  {country:"Romania",code:"+40"},{country:"Rwanda",code:"+250"},{country:"Russia",code:"+7"},{country:"Saint Kitts and Nevis",code:"+1869"},{country:"Saint Vincent and the Grenadines",code:"+1784"},
+  {country:"Saint Lucia",code:"+1758"},{country:"Samoa",code:"+685"},{country:"San Marino",code:"+378"},{country:"Sao Tome and Principe",code:"+239"},{country:"Senegal",code:"+221"},
+  {country:"Serbia",code:"+381"},{country:"Seychelles",code:"+248"},{country:"Sierra Leone",code:"+232"},{country:"Singapore",code:"+65"},{country:"Syria",code:"+963"},
+  {country:"Slovakia",code:"+421"},{country:"Slovenia",code:"+386"},{country:"Somalia",code:"+252"},{country:"Spain",code:"+34"},{country:"Sri Lanka",code:"+94"},
+  {country:"United States",code:"+1"},{country:"South Africa",code:"+27"},{country:"Sudan",code:"+249"},{country:"South Sudan",code:"+211"},{country:"Suriname",code:"+597"},
+  {country:"Sweden",code:"+46"},{country:"Switzerland",code:"+41"},{country:"Tajikistan",code:"+992"},{country:"Taiwan",code:"+886"},{country:"Tanzania",code:"+255"},
+  {country:"Thailand",code:"+66"},{country:"East Timor",code:"+670"},{country:"Togo",code:"+228"},{country:"Tonga",code:"+676"},{country:"Trinidad and Tobago",code:"+1868"},
+  {country:"Tunisia",code:"+216"},{country:"Turkey",code:"+90"},{country:"Turkmenistan",code:"+993"},{country:"Tuvalu",code:"+688"},{country:"Ukraine",code:"+380"},
+  {country:"Uganda",code:"+256"},{country:"Hungary",code:"+36"},{country:"Uruguay",code:"+598"},{country:"Uzbekistan",code:"+998"},{country:"Vanuatu",code:"+678"},
+  {country:"Vatican City",code:"+379"},{country:"Venezuela",code:"+58"},{country:"Vietnam",code:"+84"},{country:"Yemen",code:"+967"},{country:"Zambia",code:"+260"},{country:"Zimbabwe",code:"+263"}
+];
+
+function avatarUrl(seed) {
+  return "https://api.dicebear.com/7.x/avataaars/svg?seed=" + encodeURIComponent(seed) + "&backgroundColor=ffe9e1,efe7fa,fff1e6";
+}
+
+function Logo({ size, showWord }) {
+  const s = size || 30;
+  return h("div", { style:{ display:"flex", alignItems:"center", gap:8 } },
+    h("svg", { width:s, height:s, viewBox:"0 0 100 100" },
+      h("polygon", { points:"14,20 14,80 50,50", fill:PLUM }),
+      h("polygon", { points:"86,20 86,80 50,50", fill:CORAL }),
+      h("circle", { cx:50, cy:50, r:6, fill:"#fff", stroke:BORDER, strokeWidth:1.5 })
+    ),
+    showWord !== false && h("span", { style:{ fontSize:s*0.62, fontWeight:800, color:INK } }, "twinventure")
+  );
+}
+
+const DEMO_PROFILES = [
+  { id:1, name:"Lukas", surname:"Weber", age:31, city:"Munich", country:"Germany", targetCountry:"Italy", initials:"LU", photo:avatarUrl("Lukas Weber"), photos:[avatarUrl("Lukas Weber"), avatarUrl("Lukas Weber b")],
+    tags:["HVAC","Efficienza energetica"], mindset:["Early-stage","Full-time"], languages:["Tedesco","Inglese"],
+    offers:["Technical skills","Capital/idea"], seeks:["Local presence","Equal co-founding"],
+    updates:[{text:"Updated their bio", time:"2 giorni fa"},{text:"Added a new photo", time:"5 giorni fa"},{text:"Added the industry Renewable Energy", time:"1 settimana fa"}],
+    bio:"Ho un piccolo team che installa pompe di calore vicino a Monaco. Voglio replicare il modello in un secondo paese con un partner locale che conosce davvero il mercato." },
+  { id:2, name:"Amara", surname:"Okafor", age:27, city:"Lagos", country:"Nigeria", targetCountry:"Italy", initials:"AM", photo:avatarUrl("Amara Okafor"), photos:[avatarUrl("Amara Okafor"), avatarUrl("Amara Okafor b")],
+    tags:["E-commerce","Moda"], mindset:["Early-stage","Zero investitori"], languages:["Inglese","Francese"],
+    offers:["Equal co-founding","Capital/idea"], seeks:["Equal co-founding"],
+    updates:[{text:"Completed identity verification", time:"1 giorno fa"},{text:"Updated what they look for in a partner", time:"4 giorni fa"}],
+    bio:"Sto costruendo un brand di tessuti africani venduto online. Cerco chi vuole aprire la stessa cosa dall'altra parte, con la stessa fame di chi parte da zero." },
+  { id:3, name:"Sven", surname:"Karlsson", age:34, city:"Stockholm", country:"Sweden", targetCountry:"Italy", initials:"SV", photo:avatarUrl("Sven Karlsson"), photos:[avatarUrl("Sven Karlsson"), avatarUrl("Sven Karlsson b")],
+    tags:["HVAC","Manutenzione edifici"], mindset:["Early-stage","Full-time"], languages:["Inglese","Tedesco"],
+    offers:["Local presence","Supplier network"], seeks:["Capital/idea"],
+    updates:[{text:"Added 2 new photos", time:"3 giorni fa"},{text:"Updated their bio", time:"6 giorni fa"}],
+    bio:"Dopo anni come tecnico per altri, ho aperto la mia attivita di manutenzione impianti sei mesi fa. Vorrei una sede gemella in Italia." },
+  { id:4, name:"Julia", surname:"Kowalski", age:29, city:"Warsaw", country:"Poland", targetCountry:"Anywhere", initials:"JU", photo:avatarUrl("Julia Kowalski"), photos:[avatarUrl("Julia Kowalski"), avatarUrl("Julia Kowalski b")],
+    tags:["Ristorazione"], mindset:["Early-stage"], languages:["Inglese","Italiano"],
+    offers:["Capital/idea"], seeks:["Supplier network","Local presence"],
+    updates:[{text:"Updated their business idea", time:"1 giorno fa"},{text:"Added the language Italian", time:"2 settimane fa"}],
+    bio:"Ho in mente un format di street food polacco da esportare. Solo tanta voglia di costruire qualcosa mio insieme a qualcuno altrettanto testardo." },
+  { id:5, name:"Wei", surname:"Zhang", age:33, city:"Yiwu", country:"China", targetCountry:"Italy", initials:"WE", photo:avatarUrl("Wei Zhang"), photos:[avatarUrl("Wei Zhang"), avatarUrl("Wei Zhang b")],
+    tags:["Import/export","Elettronica"], mindset:["Early-stage"], languages:["Cinese (Mandarino)","Inglese"],
+    offers:["Local presence","Supplier network"], seeks:["Capital/idea","Equal co-founding"],
+    updates:[{text:"Completed identity verification", time:"12 ore fa"},{text:"Added the industry Electronics", time:"3 giorni fa"},{text:"Updated their bio", time:"1 settimana fa"}],
+    bio:"Conosco bene i distretti manifatturieri vicino a Yiwu e Shenzhen. Posso trattare con i fornitori, controllare la qualita e gestire la spedizione. Cerco chi ha il mercato di vendita in Italia." },
+  { id:6, name:"Marco", surname:"Bianchi", age:35, city:"Milan", country:"Italy", targetCountry:"Germany", initials:"MB", photo:avatarUrl("Marco Bianchi"), photos:[avatarUrl("Marco Bianchi"), avatarUrl("Marco Bianchi b")],
+    tags:["Ristorazione"], mindset:["Early-stage","Full-time"], languages:["Italiano","Tedesco"],
+    offers:["Capital/idea"], seeks:["Local presence","Supplier network"],
+    bio:"Ho gestito un ristorante a Milano per 4 anni, ora voglio replicare il format in Germania con chi conosce bene il mercato locale." },
+  { id:7, name:"Elena", surname:"Petrova", age:29, city:"Moscow", country:"Russia", targetCountry:"Italy", initials:"EP", photo:avatarUrl("Elena Petrova"), photos:[avatarUrl("Elena Petrova"), avatarUrl("Elena Petrova b")],
+    tags:["Tecnologia","Consulenza"], mindset:["Early-stage"], languages:["Russo","Inglese"],
+    offers:["Technical skills"], seeks:["Equal co-founding"],
+    bio:"Sviluppatrice da 6 anni, voglio lanciare un prodotto SaaS con un socio che porti la parte commerciale in Europa." },
+  { id:8, name:"Carlos", surname:"Silva", age:31, city:"Sao Paulo", country:"Brazil", targetCountry:"Portugal", initials:"CS", photo:avatarUrl("Carlos Silva"), photos:[avatarUrl("Carlos Silva"), avatarUrl("Carlos Silva b")],
+    tags:["Agroalimentare"], mindset:["Early-stage","Full-time"], languages:["Portoghese","Inglese"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Lavoro con piccoli produttori di caffe brasiliani. Cerco chi vuole importarlo in Europa con un progetto serio, non solo un container occasionale." },
+  { id:9, name:"Fatima", surname:"Al-Sayed", age:27, city:"Cairo", country:"Egypt", targetCountry:"United Arab Emirates", initials:"FA", photo:avatarUrl("Fatima Al-Sayed"), photos:[avatarUrl("Fatima Al-Sayed"), avatarUrl("Fatima Al-Sayed b")],
+    tags:["Moda"], mindset:["Early-stage","Zero investitori"], languages:["Arabo","Inglese"],
+    offers:["Equal co-founding"], seeks:["Capital/idea","Local presence"],
+    bio:"Disegno abiti con tessuti egiziani tradizionali. Voglio aprire uno showroom a Dubai con qualcuno che conosca il mercato del lusso li." },
+  { id:10, name:"Johan", surname:"Berg", age:33, city:"Oslo", country:"Norway", targetCountry:"Sweden", initials:"JB", photo:avatarUrl("Johan Berg"), photos:[avatarUrl("Johan Berg"), avatarUrl("Johan Berg b")],
+    tags:["Energie rinnovabili"], mindset:["Early-stage","Full-time"], languages:["Inglese"],
+    offers:["Technical skills","Capital/idea"], seeks:["Local presence"],
+    bio:"Installo pannelli solari da 5 anni. Voglio aprire una seconda sede in Svezia con qualcuno gia radicato li." },
+  { id:11, name:"Priya", surname:"Sharma", age:28, city:"Mumbai", country:"India", targetCountry:"United Kingdom", initials:"PS", photo:avatarUrl("Priya Sharma"), photos:[avatarUrl("Priya Sharma"), avatarUrl("Priya Sharma b")],
+    tags:["Tecnologia"], mindset:["Early-stage"], languages:["Hindi","Inglese"],
+    offers:["Technical skills"], seeks:["Equal co-founding","Capital/idea"],
+    bio:"Ingegnera software, voglio costruire una piattaforma edtech con qualcuno che capisca il mercato europeo dell'istruzione." },
+  { id:12, name:"Kwame", surname:"Mensah", age:34, city:"Accra", country:"Ghana", targetCountry:"Nigeria", initials:"KM", photo:avatarUrl("Kwame Mensah"), photos:[avatarUrl("Kwame Mensah"), avatarUrl("Kwame Mensah b")],
+    tags:["Agroalimentare"], mindset:["Early-stage","Full-time"], languages:["Inglese"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Esporto cacao e frutta secca dal Ghana. Cerco un socio in Nigeria per aprire un secondo hub di distribuzione." },
+  { id:13, name:"Sara", surname:"Andersson", age:26, city:"Goteborg", country:"Sweden", targetCountry:"Denmark", initials:"SA", photo:avatarUrl("Sara Andersson"), photos:[avatarUrl("Sara Andersson"), avatarUrl("Sara Andersson b")],
+    tags:["Moda"], mindset:["Early-stage","Zero investitori"], languages:["Svedese","Inglese"],
+    offers:["Equal co-founding"], seeks:["Local presence","Supplier network"],
+    bio:"Creo accessori sostenibili con materiali riciclati. Voglio aprire un secondo atelier in Danimarca con chi ci crede quanto me." },
+  { id:14, name:"Diego", surname:"Fernandez", age:37, city:"Buenos Aires", country:"Argentina", targetCountry:"Spain", initials:"DF", photo:avatarUrl("Diego Fernandez"), photos:[avatarUrl("Diego Fernandez"), avatarUrl("Diego Fernandez b")],
+    tags:["Agroalimentare"], mindset:["Full-time"], languages:["Spagnolo","Inglese"],
+    offers:["Supplier network"], seeks:["Capital/idea","Local presence"],
+    bio:"Ho una piccola azienda vinicola in Argentina. Cerco un partner spagnolo per distribuire le nostre etichette in Europa." },
+  { id:15, name:"Mei", surname:"Lin", age:30, city:"Taipei", country:"Taiwan", targetCountry:"China", initials:"ML", photo:avatarUrl("Mei Lin"), photos:[avatarUrl("Mei Lin"), avatarUrl("Mei Lin b")],
+    tags:["Elettronica","Import/export"], mindset:["Early-stage"], languages:["Cinese (Mandarino)","Inglese"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Conosco bene i produttori di componenti elettronici a Taiwan. Cerco chi vuole importare senza passare da intermediari costosi." },
+  { id:16, name:"Ahmed", surname:"Hassan", age:32, city:"Dubai", country:"United Arab Emirates", targetCountry:"Italy", initials:"AH", photo:avatarUrl("Ahmed Hassan"), photos:[avatarUrl("Ahmed Hassan"), avatarUrl("Ahmed Hassan b")],
+    tags:["Turismo"], mindset:["Early-stage","Full-time"], languages:["Arabo","Inglese"],
+    offers:["Capital/idea"], seeks:["Local presence","Equal co-founding"],
+    bio:"Gestisco un'agenzia di viaggi di lusso a Dubai. Voglio aprire un ufficio in Italia con chi conosce il turismo locale." },
+  { id:17, name:"Camille", surname:"Dubois", age:29, city:"Paris", country:"France", targetCountry:"Morocco", initials:"CD", photo:avatarUrl("Camille Dubois"), photos:[avatarUrl("Camille Dubois"), avatarUrl("Camille Dubois b")],
+    tags:["Moda"], mindset:["Early-stage"], languages:["Francese","Inglese"],
+    offers:["Equal co-founding","Capital/idea"], seeks:["Local presence"],
+    bio:"Ho un piccolo brand di borse artigianali. Voglio produrre in Marocco con un socio locale che segua la qualita da vicino." },
+  { id:18, name:"Lukas", surname:"Novotny", age:31, city:"Prague", country:"Czech Republic", targetCountry:"Austria", initials:"LN", photo:avatarUrl("Lukas Novotny"), photos:[avatarUrl("Lukas Novotny"), avatarUrl("Lukas Novotny b")],
+    tags:["HVAC"], mindset:["Early-stage","Full-time"], languages:["Tedesco","Inglese"],
+    offers:["Technical skills"], seeks:["Equal co-founding"],
+    bio:"Tecnico HVAC, voglio aprire un'attivita in proprio in Austria con qualcuno che conosca gia il mercato." },
+  { id:19, name:"Anna", surname:"Kowalczyk", age:33, city:"Krakow", country:"Poland", targetCountry:"Germany", initials:"AK", photo:avatarUrl("Anna Kowalczyk"), photos:[avatarUrl("Anna Kowalczyk"), avatarUrl("Anna Kowalczyk b")],
+    tags:["Logistica"], mindset:["Full-time"], languages:["Polacco","Tedesco"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Gestisco una piccola flotta di trasporti in Polonia. Voglio aprire un hub logistico in Germania con un socio." },
+  { id:20, name:"Ravi", surname:"Kumar", age:27, city:"Bangalore", country:"India", targetCountry:"Anywhere", initials:"RK", photo:avatarUrl("Ravi Kumar"), photos:[avatarUrl("Ravi Kumar"), avatarUrl("Ravi Kumar b")],
+    tags:["Tecnologia"], mindset:["Early-stage","Zero investitori"], languages:["Hindi","Inglese"],
+    offers:["Technical skills"], seeks:["Equal co-founding","Capital/idea"],
+    bio:"Sviluppo app da 4 anni come freelance. Voglio smettere di lavorare per altri e costruire qualcosa di mio con un socio serio." },
+  { id:21, name:"Zainab", surname:"Yusuf", age:26, city:"Abuja", country:"Nigeria", targetCountry:"United Kingdom", initials:"ZY", photo:avatarUrl("Zainab Yusuf"), photos:[avatarUrl("Zainab Yusuf"), avatarUrl("Zainab Yusuf b")],
+    tags:["Moda","E-commerce"], mindset:["Early-stage"], languages:["Inglese"],
+    offers:["Equal co-founding"], seeks:["Capital/idea","Local presence"],
+    bio:"Vendo abiti africani online da un anno. Voglio aprire un punto vendita a Londra con chi conosce quel mercato." },
+  { id:22, name:"Thabo", surname:"Nkosi", age:36, city:"Johannesburg", country:"South Africa", targetCountry:"Portugal", initials:"TN", photo:avatarUrl("Thabo Nkosi"), photos:[avatarUrl("Thabo Nkosi"), avatarUrl("Thabo Nkosi b")],
+    tags:["Energie rinnovabili"], mindset:["Full-time"], languages:["Inglese"],
+    offers:["Technical skills","Supplier network"], seeks:["Capital/idea"],
+    bio:"Installo impianti solari in Sudafrica da anni. Cerco un partner europeo per espandere l'attivita in Portogallo." },
+  { id:23, name:"Isabel", surname:"Santos", age:30, city:"Lisbon", country:"Portugal", targetCountry:"Brazil", initials:"IS", photo:avatarUrl("Isabel Santos"), photos:[avatarUrl("Isabel Santos"), avatarUrl("Isabel Santos b")],
+    tags:["Turismo"], mindset:["Early-stage","Full-time"], languages:["Portoghese","Inglese"],
+    offers:["Capital/idea"], seeks:["Local presence","Supplier network"],
+    bio:"Gestisco tour esperienziali a Lisbona. Voglio replicare il format in Brasile con chi conosce bene il territorio." },
+  { id:24, name:"Yuki", surname:"Tanaka", age:29, city:"Tokyo", country:"Japan", targetCountry:"Italy", initials:"YT", photo:avatarUrl("Yuki Tanaka"), photos:[avatarUrl("Yuki Tanaka"), avatarUrl("Yuki Tanaka b")],
+    tags:["Tecnologia"], mindset:["Early-stage"], languages:["Giapponese","Inglese"],
+    offers:["Technical skills","Capital/idea"], seeks:["Equal co-founding"],
+    bio:"Ho lavorato per anni in una startup a Tokyo. Ora voglio lanciare un progetto mio con un socio in Europa." },
+  { id:25, name:"Omar", surname:"Farouk", age:34, city:"Casablanca", country:"Morocco", targetCountry:"France", initials:"OF", photo:avatarUrl("Omar Farouk"), photos:[avatarUrl("Omar Farouk"), avatarUrl("Omar Farouk b")],
+    tags:["Agroalimentare"], mindset:["Full-time"], languages:["Arabo","Francese"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Esporto olio d'argan e prodotti tipici marocchini. Cerco un socio in Francia per aprire un canale di vendita diretto." },
+  { id:26, name:"Ingrid", surname:"Larsen", age:38, city:"Copenhagen", country:"Denmark", targetCountry:"Norway", initials:"IL", photo:avatarUrl("Ingrid Larsen"), photos:[avatarUrl("Ingrid Larsen"), avatarUrl("Ingrid Larsen b")],
+    tags:["Consulenza"], mindset:["Full-time"], languages:["Inglese"],
+    offers:["Technical skills","Equal co-founding"], seeks:["Local presence"],
+    bio:"Consulente aziendale da 8 anni, voglio aprire un secondo studio in Norvegia con un socio locale." },
+  { id:27, name:"Pedro", surname:"Alves", age:31, city:"Rio de Janeiro", country:"Brazil", targetCountry:"Portugal", initials:"PA", photo:avatarUrl("Pedro Alves"), photos:[avatarUrl("Pedro Alves"), avatarUrl("Pedro Alves b")],
+    tags:["Edilizia"], mindset:["Early-stage","Full-time"], languages:["Portoghese"],
+    offers:["Technical skills"], seeks:["Capital/idea","Local presence"],
+    bio:"Ingegnere edile, voglio aprire un'impresa di ristrutturazioni in Portogallo con un socio che conosca il mercato." },
+  { id:28, name:"Nadia", surname:"Rahman", age:27, city:"Dhaka", country:"Bangladesh", targetCountry:"United Arab Emirates", initials:"NR", photo:avatarUrl("Nadia Rahman"), photos:[avatarUrl("Nadia Rahman"), avatarUrl("Nadia Rahman b")],
+    tags:["Moda"], mindset:["Early-stage","Zero investitori"], languages:["Inglese"],
+    offers:["Supplier network"], seeks:["Capital/idea","Equal co-founding"],
+    bio:"Produco tessuti artigianali in Bangladesh. Cerco un socio a Dubai per vendere a un pubblico piu ampio." },
+  { id:29, name:"Viktor", surname:"Ivanov", age:35, city:"Saint Petersburg", country:"Russia", targetCountry:"Germany", initials:"VI", photo:avatarUrl("Viktor Ivanov"), photos:[avatarUrl("Viktor Ivanov"), avatarUrl("Viktor Ivanov b")],
+    tags:["Logistica","Import/export"], mindset:["Full-time"], languages:["Russo","Tedesco"],
+    offers:["Supplier network","Local presence"], seeks:["Capital/idea"],
+    bio:"Gestisco spedizioni tra Russia ed Europa da 10 anni. Cerco un socio in Germania per un nuovo magazzino." },
+  { id:30, name:"Chloe", surname:"Martin", age:28, city:"Lyon", country:"France", targetCountry:"Canada", initials:"CM", photo:avatarUrl("Chloe Martin"), photos:[avatarUrl("Chloe Martin"), avatarUrl("Chloe Martin b")],
+    tags:["Ristorazione"], mindset:["Early-stage"], languages:["Francese","Inglese"],
+    offers:["Equal co-founding"], seeks:["Local presence","Capital/idea"],
+    bio:"Ho aperto una piccola pasticceria a Lione. Voglio aprirne una seconda in Canada con chi conosce quel mercato." },
+  { id:31, name:"Giulia", surname:"Romano", age:29, city:"Milan", country:"Italy", targetCountry:"France", initials:"GR", photo:avatarUrl("Giulia Romano"), photos:[avatarUrl("Giulia Romano"), avatarUrl("Giulia Romano b")],
+    tags:["Moda"], mindset:["Early-stage"], languages:["Italiano","Francese"],
+    offers:["Equal co-founding"], seeks:["Local presence","Capital/idea"],
+    bio:"Disegno accessori in pelle a Milano. Voglio aprire un piccolo showroom a Parigi con chi conosce quel mercato." },
+  { id:32, name:"Alessandro", surname:"Ferrari", age:33, city:"Milan", country:"Italy", targetCountry:"United Kingdom", initials:"AF", photo:avatarUrl("Alessandro Ferrari"), photos:[avatarUrl("Alessandro Ferrari"), avatarUrl("Alessandro Ferrari b")],
+    tags:["Consulenza","Tecnologia"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Technical skills","Capital/idea"], seeks:["Equal co-founding"],
+    bio:"Consulente digitale da 7 anni, voglio lanciare un mio prodotto con un socio a Londra." },
+  { id:33, name:"Chiara", surname:"Colombo", age:26, city:"Milan", country:"Italy", targetCountry:"Spain", initials:"CC", photo:avatarUrl("Chiara Colombo"), photos:[avatarUrl("Chiara Colombo"), avatarUrl("Chiara Colombo b")],
+    tags:["E-commerce"], mindset:["Early-stage","Zero investitori"], languages:["Italiano","Spagnolo"],
+    offers:["Equal co-founding"], seeks:["Local presence","Supplier network"],
+    bio:"Vendo prodotti artigianali italiani online da un anno. Voglio aprire un magazzino in Spagna con un socio locale." },
+  { id:34, name:"Francesco", surname:"Ricci", age:35, city:"Florence", country:"Italy", targetCountry:"United States", initials:"FR", photo:avatarUrl("Francesco Ricci"), photos:[avatarUrl("Francesco Ricci"), avatarUrl("Francesco Ricci b")],
+    tags:["Moda","Consulenza"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Supplier network","Technical skills"], seeks:["Capital/idea","Local presence"],
+    bio:"Lavoro con laboratori artigiani fiorentini da anni. Cerco un socio negli Stati Uniti per portare i loro prodotti li." },
+  { id:35, name:"Valentina", surname:"Greco", age:30, city:"Florence", country:"Italy", targetCountry:"Germany", initials:"VG", photo:avatarUrl("Valentina Greco"), photos:[avatarUrl("Valentina Greco"), avatarUrl("Valentina Greco b")],
+    tags:["Agroalimentare","Ristorazione"], mindset:["Early-stage"], languages:["Italiano","Tedesco"],
+    offers:["Equal co-founding"], seeks:["Local presence","Capital/idea"],
+    bio:"Ho un piccolo laboratorio di prodotti tipici toscani. Voglio aprire un punto vendita in Germania con un socio del posto." },
+  { id:36, name:"Roberto", surname:"Marino", age:34, city:"Florence", country:"Italy", targetCountry:"United States", initials:"RM", photo:avatarUrl("Roberto Marino"), photos:[avatarUrl("Roberto Marino"), avatarUrl("Roberto Marino b")],
+    tags:["Edilizia"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Technical skills"], seeks:["Capital/idea","Local presence"],
+    bio:"Restauro edifici storici a Firenze da 10 anni. Voglio portare questa competenza negli Stati Uniti con un socio locale." },
+  { id:37, name:"Sofia", surname:"Bruno", age:27, city:"Florence", country:"Italy", targetCountry:"United Kingdom", initials:"SB", photo:avatarUrl("Sofia Bruno"), photos:[avatarUrl("Sofia Bruno"), avatarUrl("Sofia Bruno b")],
+    tags:["Moda"], mindset:["Early-stage","Zero investitori"], languages:["Italiano","Inglese"],
+    offers:["Equal co-founding"], seeks:["Local presence","Capital/idea"],
+    bio:"Disegno gioielli artigianali a Firenze. Voglio aprire un piccolo atelier a Londra con qualcuno che conosca il mercato." },
+  { id:38, name:"Matteo", surname:"Gallo", age:31, city:"Florence", country:"Italy", targetCountry:"Japan", initials:"MG", photo:avatarUrl("Matteo Gallo"), photos:[avatarUrl("Matteo Gallo"), avatarUrl("Matteo Gallo b")],
+    tags:["Ristorazione"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Capital/idea"], seeks:["Local presence","Supplier network"],
+    bio:"Gestisco una trattoria toscana da 6 anni. Voglio aprirne una in Giappone con un socio che conosca quel mercato." },
+  { id:39, name:"Elisa", surname:"Conti", age:29, city:"Florence", country:"Italy", targetCountry:"Netherlands", initials:"EC", photo:avatarUrl("Elisa Conti"), photos:[avatarUrl("Elisa Conti"), avatarUrl("Elisa Conti b")],
+    tags:["E-commerce","Moda"], mindset:["Early-stage"], languages:["Italiano","Inglese"],
+    offers:["Equal co-founding"], seeks:["Local presence","Capital/idea"],
+    bio:"Vendo pelletteria fiorentina online. Voglio aprire un magazzino nei Paesi Bassi con un socio locale." },
+  { id:40, name:"Davide", surname:"Russo", age:36, city:"Florence", country:"Italy", targetCountry:"Brazil", initials:"DR", photo:avatarUrl("Davide Russo"), photos:[avatarUrl("Davide Russo"), avatarUrl("Davide Russo b")],
+    tags:["Agroalimentare"], mindset:["Full-time"], languages:["Italiano","Portoghese"],
+    offers:["Supplier network","Technical skills"], seeks:["Capital/idea","Local presence"],
+    bio:"Produco olio d'oliva toscano da generazioni. Cerco un socio in Brasile per aprire un canale di distribuzione diretto." },
+  { id:41, name:"Martina", surname:"De Luca", age:26, city:"Florence", country:"Italy", targetCountry:"Switzerland", initials:"MD", photo:avatarUrl("Martina De Luca"), photos:[avatarUrl("Martina De Luca"), avatarUrl("Martina De Luca b")],
+    tags:["Consulenza"], mindset:["Early-stage","Zero investitori"], languages:["Italiano","Tedesco"],
+    offers:["Technical skills"], seeks:["Equal co-founding"],
+    bio:"Consulente marketing per piccole aziende. Voglio aprire uno studio in Svizzera con un socio alla pari." },
+  { id:42, name:"Simone", surname:"Costa", age:33, city:"Florence", country:"Italy", targetCountry:"Canada", initials:"SC", photo:avatarUrl("Simone Costa"), photos:[avatarUrl("Simone Costa"), avatarUrl("Simone Costa b")],
+    tags:["Turismo"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Capital/idea","Technical skills"], seeks:["Local presence"],
+    bio:"Organizzo tour guidati a Firenze da anni. Voglio replicare il format in Canada con un socio del posto." },
+  { id:43, name:"Federica", surname:"Marchetti", age:28, city:"Florence", country:"Italy", targetCountry:"United Arab Emirates", initials:"FM", photo:avatarUrl("Federica Marchetti"), photos:[avatarUrl("Federica Marchetti"), avatarUrl("Federica Marchetti b")],
+    tags:["Moda","Consulenza"], mindset:["Early-stage"], languages:["Italiano","Inglese"],
+    offers:["Equal co-founding"], seeks:["Capital/idea","Local presence"],
+    bio:"Faccio da tempo consulenza di stile per boutique locali. Voglio aprire qualcosa di mio a Dubai con un socio." },
+  { id:44, name:"Luca", surname:"Barbieri", age:38, city:"Florence", country:"Italy", targetCountry:"Australia", initials:"LB", photo:avatarUrl("Luca Barbieri"), photos:[avatarUrl("Luca Barbieri"), avatarUrl("Luca Barbieri b")],
+    tags:["Edilizia","Energie rinnovabili"], mindset:["Full-time"], languages:["Italiano","Inglese"],
+    offers:["Technical skills","Supplier network"], seeks:["Capital/idea"],
+    bio:"Installo impianti fotovoltaici in Toscana. Voglio aprire una sede in Australia con un socio che porti capitale." },
+  { id:45, name:"Giorgia", surname:"Fontana", age:25, city:"Florence", country:"Italy", targetCountry:"Anywhere", initials:"GF", photo:avatarUrl("Giorgia Fontana"), photos:[avatarUrl("Giorgia Fontana"), avatarUrl("Giorgia Fontana b")],
+    tags:["Tecnologia"], mindset:["Early-stage","Zero investitori"], languages:["Italiano","Inglese"],
+    offers:["Technical skills"], seeks:["Equal co-founding","Capital/idea"],
+    bio:"Sviluppo app da freelance da 3 anni. Voglio smettere di lavorare per altri e costruire qualcosa di mio con un socio serio." },
+];
+
+const CITY_COORDS = {
+  "Munich":[48.14,11.58], "Lagos":[6.52,3.38], "Stockholm":[59.33,18.06], "Warsaw":[52.23,21.01], "Yiwu":[29.31,120.08],
+  "Milan":[45.46,9.19], "Moscow":[55.75,37.62], "Sao Paulo":[-23.55,-46.63], "Cairo":[30.04,31.24], "Oslo":[59.91,10.75],
+  "Mumbai":[19.08,72.88], "Accra":[5.60,-0.19], "Goteborg":[57.71,11.97], "Buenos Aires":[-34.60,-58.38], "Taipei":[25.03,121.57],
+  "Dubai":[25.20,55.27], "Paris":[48.86,2.35], "Prague":[50.08,14.44], "Krakow":[50.06,19.94], "Bangalore":[12.97,77.59],
+  "Abuja":[9.08,7.40], "Johannesburg":[-26.20,28.05], "Lisbon":[38.72,-9.14], "Tokyo":[35.68,139.69], "Casablanca":[33.57,-7.59],
+  "Copenhagen":[55.68,12.57], "Rio de Janeiro":[-22.91,-43.17], "Dhaka":[23.81,90.41], "Saint Petersburg":[59.93,30.34], "Lyon":[45.76,4.83],
+  "Porto":[41.15,-8.61], "Brno":[49.20,16.61], "Florence":[43.77,11.26],
+};
+
+const CITY_COORDS_JITTER = {}; // evita marker perfettamente sovrapposti sulla stessa citta
+
+const RECEIVED_LIKES_SEED = [
+  { id:101, name:"Ines", surname:"Silva", age:30, city:"Porto", country:"Portugal", targetCountry:"Italy", initials:"IN", photo:avatarUrl("Ines Silva"),
+    tags:["Arredamento"], mindset:["Early-stage"], languages:["Portoghese","Inglese"],
+    offers:["Local presence","Supplier network"], seeks:["Capital/idea"],
+    updates:[{text:"Added a new photo", time:"2 giorni fa"}],
+    bio:"Lavoro con falegnami artigiani vicino a Porto. Vorrei portare i loro mobili in Italia con qualcuno che conosca il mercato locale." },
+  { id:102, name:"Tomas", surname:"Novak", age:28, city:"Brno", country:"Czech Republic", targetCountry:"Italy", initials:"TO", photo:avatarUrl("Tomas Novak"),
+    tags:["HVAC"], mindset:["Early-stage","Full-time"], languages:["Inglese","Tedesco"],
+    offers:["Technical skills"], seeks:["Equal co-founding","Local presence"],
+    updates:[{text:"Updated their bio", time:"4 giorni fa"},{text:"Added the language German", time:"1 settimana fa"}],
+    bio:"Tecnico HVAC da 6 anni, ora voglio mettermi in proprio e aprire in un secondo paese con un socio alla pari." },
+];
+
+const ALL_KNOWN_PROFILES = [...DEMO_PROFILES, ...RECEIVED_LIKES_SEED];
+
+function mutualFriendsCount(id) {
+  const s = "mutual-" + id;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 19; // numero stabile ma "casuale" tra 0 e 18
+}
+
+function totalFriendsCount(id) {
+  const s = "total-" + id;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const base = 20 + (h % 280); // tra 20 e 299
+  return Math.max(base, mutualFriendsCount(id));
+}
+
+function getMutualFriends(profile) {
+  const count = mutualFriendsCount(profile.id);
+  const pool = ALL_KNOWN_PROFILES.filter(x => x.id !== profile.id);
+  let seed = 0;
+  const s = "mutual-list-" + profile.id;
+  for (let i = 0; i < s.length; i++) seed = (seed * 31 + s.charCodeAt(i)) >>> 0;
+  const arr = [...pool];
+  for (let i = arr.length - 1; i > 0; i--) {
+    seed = (seed * 1103515245 + 12345) >>> 0;
+    const j = seed % (i + 1);
+    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr.slice(0, Math.min(count, arr.length));
+}
+
+const PROFILE_VIEWS_SEED = [
+  { ...ALL_KNOWN_PROFILES[0], viewedAgo:"2 ore fa" },
+  { ...ALL_KNOWN_PROFILES[2], viewedAgo:"5 ore fa" },
+  { ...ALL_KNOWN_PROFILES[4], viewedAgo:"ieri" },
+  { ...ALL_KNOWN_PROFILES[5], viewedAgo:"2 giorni fa" },
+];
+
+function Tag({ children, tone, highlight }) {
+  const bg = tone === "plum" ? PLUM_BG : tone === "coral" ? CORAL_BG : "#F4F1F8";
+  const fg = tone === "plum" ? PLUM : tone === "coral" ? CORAL : MUTED;
+  return h("span", { style:{
+    background:bg, color:fg, fontSize:12, padding:"4px 10px", borderRadius:20, fontWeight:600, whiteSpace:"nowrap",
+    border: highlight ? "1.5px solid #D4A72C" : "1.5px solid transparent",
+    boxShadow: highlight ? "0 0 0 3px rgba(212,167,44,0.16)" : "none"
+  } }, highlight && "\u2728 ", children);
+}
+
+function initialsOf(name, surname) {
+  const a = (name||"").trim()[0] || "";
+  const b = (surname||"").trim()[0] || "";
+  return (a+b).toUpperCase() || "?";
+}
+
+function Avatar({ photo, initials, size }) {
+  const s = size || 68;
+  return h("div", { style:{ width:s, height:s, borderRadius:"50%", padding:3, background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 } },
+    photo
+      ? h("img", { src:photo, alt:"", style:{ width:"100%", height:"100%", borderRadius:"50%", objectFit:"cover", background:"#fff" } })
+      : h("div", { style:{ width:"100%", height:"100%", borderRadius:"50%", background:"#fff", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700, fontSize:s*0.3, color:PLUM } }, initials)
+  );
+}
+
+function IconChevronLeft({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2.2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("polyline", { points:"15 18 9 12 15 6" })
+  );
+}
+
+function BackButton({ onClick, label }) {
+  return h("button", { onClick, style:{ display:"flex", alignItems:"center", gap:4, border:"none", background:"none", padding:0, cursor:"pointer" } },
+    h(IconChevronLeft, { size:22, color:INK }),
+    label && h("span", { style:{ fontSize:15, fontWeight:600, color:INK } }, label)
+  );
+}
+
+function IconUndo({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill: color || "currentColor" },
+    h("path", { d:"M12.5 8c-2.65 0-5.05 0.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-0.78C21.08 11.03 17.15 8 12.5 8z" })
+  );
+}
+
+function IconBriefcase({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("rect", { x:3, y:7, width:18, height:13, rx:2 }),
+    h("path", { d:"M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" }),
+    h("line", { x1:3, y1:13, x2:21, y2:13 })
+  );
+}
+
+function Toggle({ on, onClick }) {
+  return h("button", { type:"button", onClick, style:{ width:44, height:26, borderRadius:20, border:"none", background: on ? GRADIENT : "#DDD8CE", position:"relative", padding:0, flexShrink:0 } },
+    h("div", { style:{ position:"absolute", top:3, left: on ? 21 : 3, width:20, height:20, borderRadius:"50%", background:"#fff", transition:"left 0.15s ease", boxShadow:"0 1px 3px rgba(0,0,0,0.3)" } })
+  );
+}
+
+const BG_TEMPLATES = [
+  { id:"peach", gradient:"linear-gradient(135deg, #FFDCC9 0%, #F4D9FF 100%)" },
+  { id:"sunset", gradient:"linear-gradient(135deg, #FFC9B8 0%, #FFE0A3 100%)" },
+  { id:"lavender", gradient:"linear-gradient(135deg, #E4D6F5 0%, #D8E8F7 100%)" },
+  { id:"mint", gradient:"linear-gradient(135deg, #D3F0E4 0%, #E8F5D9 100%)" },
+  { id:"ocean", gradient:"linear-gradient(135deg, #C9E4F5 0%, #D8D4F5 100%)" },
+  { id:"gold", gradient:"linear-gradient(135deg, #FFE9B8 0%, #FFD1B0 100%)" },
+];
+function bgGradientFor(id) {
+  const t = BG_TEMPLATES.find(x => x.id === id);
+  return t ? t.gradient : BG_TEMPLATES[0].gradient;
+}
+function pseudoRandomBgId(profileId) {
+  const s = "bg-" + profileId;
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return BG_TEMPLATES[h % BG_TEMPLATES.length].id;
+}
+function bgGradientForProfile(p) {
+  return bgGradientFor(p.background || pseudoRandomBgId(p.id));
+}
+
+function ProfileCard({ profile, me, hideMutuals }) {
+  const p = profile || {};
+  const tags = p.tags || [];
+  const offers = p.offers || [];
+  const seeks = p.seeks || [];
+  const mindset = p.mindset || [];
+  const myLangs = (me && me.languages) || [];
+  const myOffers = (me && me.offers) || [];
+  const mySeeks = (me && me.seeks) || [];
+  const mutuals = mutualFriendsCount(p.id);
+  return h("div", { style:{ background:CARD, borderRadius:24, overflow:"hidden", width:"100%", maxWidth:360, boxShadow:SHADOW } },
+    h("div", { style:{ height:180, background: bgGradientForProfile(p), display:"flex", alignItems:"center", justifyContent:"center", position:"relative" } },
+      h(Avatar, { photo:p.photo, initials: p.initials || initialsOf(p.name, p.surname), size:84 }),
+      h("span", { style:{ position:"absolute", top:12, right:12, background:"rgba(255,255,255,0.9)", fontSize:12, fontWeight:600, padding:"4px 10px", borderRadius:20, color:PLUM } }, (p.country||"") + " \u2192 " + (p.targetCountry||""))
+    ),
+    h("div", { style:{ padding:"1.1rem 1.25rem" } },
+      h("div", { style:{ display:"flex", alignItems:"center", gap:6, marginBottom:2 } },
+        h("p", { style:{ fontWeight:700, fontSize:18, margin:0, color:INK } }, [p.name, p.surname].filter(Boolean).join(" ") + (p.age ? ", " + p.age : "")),
+        p.docVerified && h("span", { title:"Identity verified", style:{ fontSize:11, background:"#E4F7EE", color:"#1E9E64", fontWeight:700, padding:"2px 7px", borderRadius:20 } }, "\u2713 Verificato")
+      ),
+      h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 12px" } }, p.city ? p.city + ", " + p.country : p.country),
+      !hideMutuals && p.id != null && h("p", { style:{ fontSize:12, color:PLUM, fontWeight:600, margin:"0 0 12px", display:"flex", alignItems:"center", gap:5 } }, "\u{1F465} " + totalFriendsCount(p.id) + " friends \u00b7 " + mutuals + " in common"),
+      h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 } }, tags.map(t => h(Tag, { key:t, tone:"plum" }, t))),
+      h("p", { style:{ fontSize:14.5, lineHeight:1.6, color:INK, margin:"0 0 12px" } }, p.bio),
+      (p.languages||[]).length > 0 && h("div", { style:{ display:"flex", gap:6, marginBottom:6, alignItems:"flex-start" } },
+        h("span", { style:{ fontSize:12, color:MUTED, minWidth:42, marginTop:4, fontWeight:600 } }, "Lingue"),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, (p.languages||[]).map(t => h(Tag, { key:t, tone:"gray", highlight: myLangs.includes(t) }, t)))
+      ),
+      h("div", { style:{ display:"flex", gap:6, marginBottom:6, alignItems:"flex-start" } },
+        h("span", { style:{ fontSize:12, color:MUTED, minWidth:42, marginTop:4, fontWeight:600 } }, "Offre"),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, offers.map(t => h(Tag, { key:t, tone:"coral", highlight: myOffers.includes(t) }, t)))
+      ),
+      h("div", { style:{ display:"flex", gap:6, marginBottom:12, alignItems:"flex-start" } },
+        h("span", { style:{ fontSize:12, color:MUTED, minWidth:42, marginTop:4, fontWeight:600 } }, "Search"),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, seeks.map(t => h(Tag, { key:t, tone:"gray", highlight: mySeeks.includes(t) }, t)))
+      ),
+      h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, mindset.map(t => h(Tag, { key:t, tone:"gray" }, t)))
+    )
+  );
+}
+
+function DialCodePicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = DIAL_CODES.filter(d => d.country.toLowerCase().includes(query.trim().toLowerCase()));
+  return h("div", { style:{ position:"relative", flexShrink:0 } },
+    h("button", { type:"button", onClick:()=>setOpen(o=>!o), style:{ padding:"11px 10px", borderRadius:12, border:`1.5px solid ${BORDER}`, background:CARD, fontSize:14, minWidth:80, display:"flex", justifyContent:"space-between", alignItems:"center", gap:4, color:INK } },
+      h("span", null, value),
+      h("span", { style:{ color:MUTED, fontSize:10 } }, "\u25BE")
+    ),
+    open && h(React.Fragment, null,
+      h("div", { onClick:()=>{ setOpen(false); setQuery(""); }, style:{ position:"fixed", inset:0, zIndex:1100 } }),
+      h("div", { style:{ position:"absolute", top:"100%", left:0, background:CARD, borderRadius:12, boxShadow:SHADOW, zIndex:1101, marginTop:4, width:230, maxHeight:240, display:"flex", flexDirection:"column" } },
+        h("input", { autoFocus:true, value:query, onChange:e=>setQuery(e.target.value), placeholder:"Search country...", style:{ padding:10, border:"none", borderBottom:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+        h("div", { style:{ overflowY:"auto" } },
+          filtered.length===0 && h("p", { style:{ fontSize:13, color:MUTED, padding:10, margin:0 } }, "No country found."),
+          filtered.map(d => h("button", { key:d.country, type:"button", onClick:()=>{ onChange(d.code); setOpen(false); setQuery(""); }, style:{ width:"100%", textAlign:"left", padding:"9px 12px", border:"none", background: value===d.code ? PLUM_BG : "transparent", color: value===d.code ? PLUM : INK, fontSize:13.5 } }, d.code + "   " + d.country))
+        )
+      )
+    )
+  );
+}
+
+function CountryPicker({ label, value, onChange, options, popularOptions }) {
+  const list = options || COUNTRIES;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const typing = query.trim().length > 0;
+  const filtered = typing
+    ? list.filter(c => c.toLowerCase().includes(query.trim().toLowerCase()))
+    : (popularOptions || list);
+  const boxStyle = { width:"100%", padding:11, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, boxSizing:"border-box", background:CARD, textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center", color:INK };
+  return h("div", { style:{ position:"relative" } },
+    h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, label),
+    h("button", { type:"button", onClick:()=>setOpen(o=>!o), style:boxStyle },
+      h("span", null, value || "Seleziona"),
+      h("span", { style:{ color:MUTED, fontSize:11 } }, "\u25BE")
+    ),
+    open && h(React.Fragment, null,
+      h("div", { onClick:()=>{ setOpen(false); setQuery(""); }, style:{ position:"fixed", inset:0, zIndex:1100 } }),
+      h("div", { style:{ position:"absolute", top:"100%", left:0, right:0, background:CARD, borderRadius:12, boxShadow:SHADOW, zIndex:1101, marginTop:4, maxHeight:240, display:"flex", flexDirection:"column" } },
+        h("input", { autoFocus:true, value:query, onChange:e=>setQuery(e.target.value), placeholder:"Search for a country...", style:{ padding:10, border:"none", borderBottom:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+        h("div", { style:{ overflowY:"auto" } },
+          !typing && popularOptions && h("p", { style:{ fontSize:10.5, color:MUTED, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, padding:"8px 12px 2px", margin:0 } }, "Popular"),
+          filtered.length===0 && h("p", { style:{ fontSize:13, color:MUTED, padding:10, margin:0 } }, "No country found."),
+          filtered.map(c => h("button", { key:c, type:"button", onClick:()=>{ onChange(c); setOpen(false); setQuery(""); }, style:{ width:"100%", textAlign:"left", padding:"9px 12px", border:"none", background: value===c ? PLUM_BG : "transparent", color: value===c ? PLUM : INK, fontSize:13.5, fontWeight: value===c ? 700 : 400 } }, c))
+        )
+      )
+    )
+  );
+}
+
+function AuthScreen({ onSuccess, t }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [genCode, setGenCode] = useState("");
+  const [enteredCode, setEnteredCode] = useState("");
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const live = !!twinventureDb;
+
+  const fieldStyle = { width:"100%", padding:12, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, marginBottom:14, boxSizing:"border-box" };
+
+  const sendCode = async () => {
+    if (!email.trim() || !email.includes("@")) { setError("Enter a valid email."); return; }
+    setError("");
+    setSending(true);
+    if (live) {
+      const redirectTo = window.location.origin + window.location.pathname;
+      const { error: err } = await twinventureDb.auth.signInWithOtp({ email: email.trim(), options:{ shouldCreateUser:true, emailRedirectTo:redirectTo } });
+      setSending(false);
+      if (err) { setError("I couldn't send the email: " + err.message); return; }
+      setCodeSent(true);
+    } else {
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      setGenCode(code);
+      setCodeSent(true);
+      setEnteredCode("");
+      setSending(false);
+    }
+  };
+
+  const submit = async () => {
+    if (enteredCode.trim() !== genCode) { setError("Wrong code, try again."); return; }
+    setError("");
+    onSuccess();
+  };
+
+  const switchMode = (m) => { setMode(m); setCodeSent(false); setEnteredCode(""); setError(""); };
+
+  return h("div", { style:{ maxWidth:360, margin:"40px auto 0" } },
+    h("div", { style:{ display:"flex", justifyContent:"center", marginBottom:28 } }, h(Logo, { size:36 })),
+    h("div", { style:{ display:"flex", background:"#F4F1F8", borderRadius:14, padding:4, marginBottom:22 } },
+      h("button", { onClick:()=>switchMode("login"), style:{ flex:1, padding:"9px 0", borderRadius:10, border:"none", background: mode==="login" ? CARD : "transparent", color: mode==="login" ? PLUM : MUTED, fontWeight:700, fontSize:13.5, boxShadow: mode==="login" ? SHADOW : "none" } }, t("login")),
+      h("button", { onClick:()=>switchMode("register"), style:{ flex:1, padding:"9px 0", borderRadius:10, border:"none", background: mode==="register" ? CARD : "transparent", color: mode==="register" ? PLUM : MUTED, fontWeight:700, fontSize:13.5, boxShadow: mode==="register" ? SHADOW : "none" } }, t("register"))
+    ),
+    h("p", { style:{ fontSize:20, fontWeight:800, color:INK, margin:"0 0 4px" } }, mode === "login" ? t("welcomeBack") : t("createAccount")),
+    h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 20px" } }, live ? "Log in with a link sent to your email, no password to remember." : t("authDesc")),
+    h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, t("email")),
+    h("input", { type:"email", value:email, onChange:e=>{ setEmail(e.target.value); setCodeSent(false); }, placeholder:"name@example.com", style:fieldStyle }),
+
+    !codeSent
+      ? h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, boxShadow:"0 6px 16px rgba(255,107,74,0.35)", opacity: sending?0.7:1 } }, sending ? "Sending..." : (live ? "Send sign-in link" : t("sendCode")))
+      : live
+        ? h("div", null,
+            h("div", { style:{ background:PLUM_BG, borderRadius:14, padding:14, marginBottom:8 } },
+              h("p", { style:{ fontSize:13, color:PLUM, fontWeight:700, margin:"0 0 4px" } }, "Check your email"),
+              h("p", { style:{ fontSize:12.5, color:INK, margin:0, lineHeight:1.5 } }, "We sent a sign-in link to " + email + ". Open it on this device and this page will log you in automatically. Check your spam folder too.")
+            ),
+            h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", border:"none", background:"none", fontSize:12, color:MUTED, textDecoration:"underline" } }, "Resend link")
+          )
+        : h("div", null,
+            h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 8px", fontStyle:"italic" } }, "Demo: the email code is " + genCode),
+            h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, "6-digit code"),
+            h("input", { value:enteredCode, onChange:e=>setEnteredCode(e.target.value), placeholder:"123456", style:fieldStyle }),
+            h("button", { onClick:submit, disabled:sending, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, boxShadow:"0 6px 16px rgba(255,107,74,0.35)", marginBottom:8, opacity: sending?0.7:1 } }, mode === "login" ? t("login") : t("register")),
+            h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", border:"none", background:"none", fontSize:12, color:MUTED, textDecoration:"underline" } }, "Resend code")
+          ),
+    error && h("p", { style:{ fontSize:12.5, color:CORAL, fontWeight:600, margin:"10px 0 0" } }, error),
+    h("p", { style:{ fontSize:11, color:MUTED, textAlign:"center", marginTop:14 } }, live ? "The link really arrives via email." : "Supabase is unreachable: demo mode, any email works.")
+  );
+}
+
+function Onboarding({ initial, onDone, onCancel, title, ctaLabel }) {
+  const i = initial || {};
+  const [name, setName] = useState(i.name || "");
+  const [surname, setSurname] = useState(i.surname || "");
+  const [age, setAge] = useState(i.age || "");
+  const [city, setCity] = useState(i.city || "");
+  const [dialCode, setDialCode] = useState(i.dialCode || "+39");
+  const [phone, setPhone] = useState(i.phone || "");
+  const [codeSent, setCodeSent] = useState(false);
+  const [genCode, setGenCode] = useState("");
+  const [enteredCode, setEnteredCode] = useState("");
+  const [phoneVerified, setPhoneVerified] = useState(!!i.phoneVerified);
+  const [codeError, setCodeError] = useState("");
+  const [gender, setGender] = useState(i.gender || "");
+  const [photos, setPhotos] = useState(i.photos || (i.photo ? [i.photo] : []));
+  const [background, setBackground] = useState(i.background || BG_TEMPLATES[0].id);
+  const [country, setCountry] = useState(i.country || "Italia");
+  const [target, setTarget] = useState(i.targetCountry || "Germania");
+  const [tags, setTags] = useState(i.tags || []);
+  const [tagInput, setTagInput] = useState("");
+  const [offers, setOffers] = useState(i.offers || []);
+  const [seeks, setSeeks] = useState(i.seeks || []);
+  const [bio, setBio] = useState(i.bio || "");
+  const [languages, setLanguages] = useState(i.languages || []);
+  const [docPhoto, setDocPhoto] = useState(i.docPhoto || null);
+  const [selfiePhoto, setSelfiePhoto] = useState(i.selfiePhoto || null);
+  const [docVerifying, setDocVerifying] = useState(false);
+  const [docVerified, setDocVerified] = useState(!!i.docVerified);
+  const [error, setError] = useState("");
+
+  const toggle = (list, setList, v) => setList(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
+  const addTag = () => { const v = tagInput.trim(); if (v && tags.length < 3 && !tags.includes(v)) { setTags([...tags, v]); setTagInput(""); } };
+
+  const onPhoneChange = (v) => { setPhone(v); if (phoneVerified) { setPhoneVerified(false); setCodeSent(false); } };
+  const onDialChange = (v) => { setDialCode(v); if (phoneVerified) { setPhoneVerified(false); setCodeSent(false); } };
+
+  const sendCode = () => {
+    if (!phone.trim()) return;
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGenCode(code);
+    setCodeSent(true);
+    setEnteredCode("");
+    setCodeError("");
+  };
+
+  const verifyCode = () => {
+    if (enteredCode.trim() === genCode) {
+      setPhoneVerified(true);
+      setCodeError("");
+    } else {
+      setCodeError("Wrong code, try again.");
+    }
+  };
+
+  const MAX_PHOTOS = 4;
+  const onPhotosChange = (e) => {
+    const files = Array.from(e.target.files || []).slice(0, Math.max(0, MAX_PHOTOS - photos.length));
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => setPhotos(prev => prev.length < MAX_PHOTOS ? [...prev, reader.result] : prev);
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+  const removePhoto = (idx) => setPhotos(prev => prev.filter((_, x) => x !== idx));
+  const makePrimary = (idx) => setPhotos(prev => { const copy = [...prev]; const chosen = copy.splice(idx, 1)[0]; return [chosen, ...copy]; });
+
+  const toggleLanguage = (l) => setLanguages(prev => prev.includes(l) ? prev.filter(x => x !== l) : [...prev, l]);
+
+  const onDocPhoto = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setDocPhoto(reader.result); setDocVerified(false); };
+    reader.readAsDataURL(file);
+  };
+  const onSelfiePhoto = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { setSelfiePhoto(reader.result); setDocVerified(false); };
+    reader.readAsDataURL(file);
+  };
+  const verifyDoc = () => {
+    if (!docPhoto || !selfiePhoto) return;
+    setDocVerifying(true);
+    setTimeout(() => { setDocVerifying(false); setDocVerified(true); }, 1400);
+  };
+
+  const fieldStyle = { width:"100%", padding:11, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, marginBottom:14, boxSizing:"border-box" };
+  const labelStyle = { fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 };
+
+  const submit = () => {
+    const missing = [];
+    if (!photos.length) missing.push("almeno una foto");
+    if (!name.trim()) missing.push("il nome");
+    if (!surname.trim()) missing.push("il cognome");
+    if (!age) missing.push("l'eta");
+    if (!city.trim()) missing.push("la citta");
+    if (!phone.trim()) missing.push("il telefono");
+    if (!phoneVerified) missing.push("phone number verification (send and confirm the code)");
+    if (!gender) missing.push("il sesso");
+    if (tags.length === 0) missing.push("almeno un settore");
+    if (offers.length === 0) missing.push("almeno una cosa che offri");
+    if (seeks.length === 0) missing.push("almeno una cosa che cerchi");
+    if (!bio.trim()) missing.push("la tua idea in poche righe");
+    if (languages.length === 0) missing.push("almeno una lingua parlata");
+
+    if (missing.length > 0) {
+      setError("Manca ancora: " + missing.join(", ") + ".");
+      return;
+    }
+    setError("");
+    onDone({
+      name, surname, age: Number(age), city, dialCode, phone, phoneVerified, gender, photos, photo: photos[0], background,
+      country, targetCountry: target,
+      initials: initialsOf(name, surname),
+      tags, offers, seeks, bio, languages, docPhoto, selfiePhoto, docVerified,
+    });
+  };
+
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    initial && onCancel && h("div", { style:{ marginBottom:10 } }, h(BackButton, { onClick:onCancel, label:"Back" })),
+    h("p", { style:{ fontSize:22, fontWeight:800, color:INK, margin:"0 0 4px" } }, title || "Create your profile"),
+    h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 20px" } }, "Tell us what you want to build, not just who you are."),
+
+    h("div", { style:{ display:"flex", flexDirection:"column", alignItems:"center", marginBottom:18 } },
+      h("div", { style:{ position:"relative" } },
+        h(Avatar, { photo: photos[0], initials: initialsOf(name||"?", surname), size:88 }),
+        h("label", { style:{ position:"absolute", bottom:-2, right:-2, width:32, height:32, borderRadius:"50%", background: photos.length>=MAX_PHOTOS ? "#DDD8CE" : GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", cursor: photos.length>=MAX_PHOTOS ? "not-allowed" : "pointer", border:"3px solid #fff", boxShadow:SHADOW } },
+          h("span", { style:{ color:"#fff", fontSize:20, fontWeight:900, lineHeight:1, marginTop:-2 } }, "+"),
+          h("input", { type:"file", accept:"image/*", multiple:true, disabled: photos.length>=MAX_PHOTOS, onChange:onPhotosChange, style:{ display:"none" } })
+        )
+      ),
+      photos.length > 0 && h("div", { style:{ display:"flex", gap:6, marginTop:12, flexWrap:"wrap", justifyContent:"center", maxWidth:280 } },
+        photos.map((p, idx) => h("div", { key:idx, style:{ position:"relative" } },
+          h("img", { src:p, onClick:()=>makePrimary(idx), title:"Rendi foto principale", style:{ width:46, height:46, borderRadius:10, objectFit:"cover", cursor:"pointer", border: idx===0 ? `2px solid ${CORAL}` : `2px solid ${BORDER}` } }),
+          h("button", { type:"button", onClick:()=>removePhoto(idx), style:{ position:"absolute", top:-6, right:-6, width:17, height:17, borderRadius:"50%", background:INK, color:"#fff", border:"2px solid #fff", fontSize:9, lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center", padding:0 } }, "\u2715")
+        ))
+      ),
+      h("p", { style:{ fontSize:11, color:MUTED, marginTop:8, textAlign:"center" } }, photos.length === 0 ? "Add at least one photo (max " + MAX_PHOTOS + ")" : photos.length + "/" + MAX_PHOTOS + " photos \u00b7 tap a photo to make it primary"),
+      h("p", { style:{ fontSize:12, color:MUTED, fontWeight:600, margin:"14px 0 6px", textAlign:"center" } }, "Profile background"),
+      h("p", { style:{ fontSize:11, color:MUTED, margin:"0 0 8px", textAlign:"center" } }, "Preview"),
+      h("div", { style:{ height:130, borderRadius:18, background: bgGradientFor(background), display:"flex", alignItems:"center", justifyContent:"center", marginBottom:14, boxShadow:SHADOW, transition:"background 0.2s ease" } },
+        h(Avatar, { photo: photos[0], initials: initialsOf(name||"?", surname), size:76 })
+      ),
+      h("div", { style:{ display:"flex", gap:10, justifyContent:"center" } }, BG_TEMPLATES.map(t => h("button", { key:t.id, type:"button", onClick:()=>setBackground(t.id), style:{ width:36, height:36, borderRadius:"50%", background:t.gradient, border: background===t.id ? `3px solid ${PLUM}` : "3px solid #fff", boxShadow:SHADOW, padding:0, cursor:"pointer" } })))
+    ),
+
+    h("div", { style:{ display:"flex", gap:10 } },
+      h("div", { style:{ flex:1 } },
+        h("label", { style:labelStyle }, "First name"),
+        h("input", { value:name, onChange:e=>setName(e.target.value.replace(/[^\p{L}\s'-]/gu, "")), placeholder:"Marco", style:fieldStyle })
+      ),
+      h("div", { style:{ flex:1 } },
+        h("label", { style:labelStyle }, "Last name"),
+        h("input", { value:surname, onChange:e=>setSurname(e.target.value.replace(/[^\p{L}\s'-]/gu, "")), placeholder:"Rossi", style:fieldStyle })
+      )
+    ),
+    h("div", { style:{ display:"flex", gap:10 } },
+      h("div", { style:{ flex:1 } },
+        h("label", { style:labelStyle }, "Age"),
+        h("input", { type:"text", inputMode:"numeric", value:age, onChange:e=>setAge(e.target.value.replace(/[^0-9]/g, "")), placeholder:"29", style:fieldStyle })
+      ),
+      h("div", { style:{ flex:2 } },
+        h("label", { style:labelStyle }, "City"),
+        h("input", { value:city, onChange:e=>setCity(e.target.value.replace(/[^\p{L}\s'-]/gu, "")), placeholder:"Milano", style:fieldStyle })
+      )
+    ),
+    h("div", { style:{ marginBottom:14 } },
+      h("label", { style:labelStyle }, "Telefono"),
+      h("div", { style:{ display:"flex", gap:8, marginBottom:8 } },
+        h(DialCodePicker, { value:dialCode, onChange:onDialChange }),
+        h("input", { value:phone, onChange:e=>onPhoneChange(e.target.value), placeholder:"555 1234567", style:{ flex:1, padding:11, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, boxSizing:"border-box" } })
+      ),
+      phoneVerified
+        ? h("div", { style:{ display:"flex", alignItems:"center", gap:6, fontSize:12.5, color:"#1E9E64", fontWeight:700 } }, "\u2713 Number verified")
+        : h("div", null,
+            !codeSent
+              ? h("button", { type:"button", onClick:sendCode, disabled: !phone.trim(), style:{ padding:"8px 14px", borderRadius:10, border:`1.5px solid ${PLUM}`, background:CARD, color:PLUM, fontSize:12.5, fontWeight:700, opacity: phone.trim() ? 1 : 0.5 } }, "Send verification code")
+              : h("div", null,
+                  h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 6px", fontStyle:"italic" } }, "Demo: the SMS code is " + genCode),
+                  h("div", { style:{ display:"flex", gap:8 } },
+                    h("input", { value:enteredCode, onChange:e=>setEnteredCode(e.target.value), placeholder:"Codice a 6 cifre", style:{ flex:1, padding:9, borderRadius:10, border:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+                    h("button", { type:"button", onClick:verifyCode, style:{ padding:"0 14px", borderRadius:10, border:"none", background:GRADIENT, color:"#fff", fontSize:12.5, fontWeight:700 } }, "Verifica")
+                  ),
+                  codeError && h("p", { style:{ fontSize:11.5, color:CORAL, margin:"6px 0 0", fontWeight:600 } }, codeError),
+                  h("button", { type:"button", onClick:sendCode, style:{ marginTop:6, border:"none", background:"none", fontSize:11.5, color:MUTED, textDecoration:"underline", padding:0 } }, "Resend code")
+                )
+          )
+    ),
+    h("label", { style:{...labelStyle, marginBottom:6} }, "Sesso"),
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 } }, GENDER_OPTIONS.map(g =>
+      h("button", { key:g, onClick:()=>setGender(g), style:{ fontSize:12, padding:"6px 12px", borderRadius:20, border: gender===g?`1.5px solid ${PLUM}`:`1.5px solid ${BORDER}`, background: gender===g?PLUM_BG:CARD, color: gender===g?PLUM:MUTED, fontWeight:600 } }, g)
+    )),
+    h("div", { style:{ display:"flex", gap:10, marginBottom:14 } },
+      h("div", { style:{ flex:1 } }, h(CountryPicker, { label:"Paese di base", value:country, onChange:setCountry, options: COUNTRIES.filter(c => c !== "Anywhere") })),
+      h("div", { style:{ flex:1 } }, h(CountryPicker, { label:"Vuoi espanderti in", value:target, onChange:setTarget }))
+    ),
+    h("label", { style:{...labelStyle, marginBottom:6} }, "Industries (up to 3)"),
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 } }, tags.map(t=>h(Tag,{key:t,tone:"plum"},t))),
+    tags.length < 3 && h("div", { style:{ display:"flex", gap:6, marginBottom:10 } },
+      h("input", { value:tagInput, onChange:e=>setTagInput(e.target.value), onKeyDown:e=>e.key==="Enter"&&addTag(), placeholder:"e.g. Restaurants", style:{ flex:1, padding:9, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:13, boxSizing:"border-box" } }),
+      h("button", { onClick:addTag, style:{ padding:"0 16px", borderRadius:12, border:"none", background:GRADIENT, color:"#fff", fontWeight:700 } }, "+")
+    ),
+    tags.length < 3 && h("div", { style:{ marginBottom:18 } },
+      h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 6px" } }, "Suggestions:"),
+      h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, SUGGESTED_INDUSTRIES.filter(s => !tags.includes(s)).map(s =>
+        h("button", { key:s, onClick:()=>setTags([...tags, s]), style:{ fontSize:11.5, padding:"4px 10px", borderRadius:20, border:`1.5px dashed ${BORDER}`, background:CARD, color:MUTED, fontWeight:600 } }, "+ " + s)
+      ))
+    ),
+    h("label", { style:{...labelStyle, marginBottom:6} }, "What you offer"),
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 } }, ROLE_OPTIONS.map(r =>
+      h("button", { key:r, onClick:()=>toggle(offers,setOffers,r), style:{ fontSize:12, padding:"6px 12px", borderRadius:20, border: offers.includes(r)?`1.5px solid ${CORAL}`:`1.5px solid ${BORDER}`, background: offers.includes(r)?CORAL_BG:CARD, color: offers.includes(r)?CORAL:MUTED, fontWeight:600 } }, r)
+    )),
+    h("label", { style:{...labelStyle, marginBottom:6} }, "What you're looking for"),
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:18 } }, ROLE_OPTIONS.map(r =>
+      h("button", { key:r, onClick:()=>toggle(seeks,setSeeks,r), style:{ fontSize:12, padding:"6px 12px", borderRadius:20, border: seeks.includes(r)?`1.5px solid ${PLUM}`:`1.5px solid ${BORDER}`, background: seeks.includes(r)?PLUM_BG:CARD, color: seeks.includes(r)?PLUM:MUTED, fontWeight:600 } }, r)
+    )),
+    h("label", { style:labelStyle }, "Your idea, in a few lines"),
+    h("textarea", { value:bio, onChange:e=>setBio(e.target.value), rows:4, placeholder:"What you want to build, and why. What you're looking for in a partner.", style:{...fieldStyle, resize:"none", marginBottom:18} }),
+
+    h("label", { style:{...labelStyle, marginBottom:6} }, "Languages spoken"),
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:20 } }, SUGGESTED_LANGUAGES.map(l =>
+      h("button", { key:l, type:"button", onClick:()=>toggleLanguage(l), style:{ fontSize:12, padding:"6px 12px", borderRadius:20, border: languages.includes(l)?`1.5px solid ${PLUM}`:`1.5px solid ${BORDER}`, background: languages.includes(l)?PLUM_BG:CARD, color: languages.includes(l)?PLUM:MUTED, fontWeight:600 } }, l)
+    )),
+
+    h("div", { style:{ background:"#F9F7FC", borderRadius:14, padding:14, marginBottom:20 } },
+      h("p", { style:{ fontSize:13.5, fontWeight:700, color:INK, margin:"0 0 2px" } }, "Identity verification (optional in this demo)"),
+      h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 12px", lineHeight:1.5 } }, "Upload a document and a selfie to get the \u201cIdentity verified\u201d badge on your profile."),
+      docVerified
+        ? h("div", { style:{ display:"flex", alignItems:"center", gap:6, fontSize:12.5, color:"#1E9E64", fontWeight:700 } }, "\u2713 Identita verificata")
+        : h("div", null,
+            h("div", { style:{ display:"flex", gap:8, marginBottom:10 } },
+              h("label", { style:{ flex:1, textAlign:"center", padding:"9px 6px", borderRadius:10, border:`1.5px dashed ${BORDER}`, background:CARD, fontSize:11.5, fontWeight:600, color: docPhoto?PLUM:MUTED, cursor:"pointer" } },
+                docPhoto ? "\u2713 Documento caricato" : "Upload document",
+                h("input", { type:"file", accept:"image/*", onChange:onDocPhoto, style:{ display:"none" } })
+              ),
+              h("label", { style:{ flex:1, textAlign:"center", padding:"9px 6px", borderRadius:10, border:`1.5px dashed ${BORDER}`, background:CARD, fontSize:11.5, fontWeight:600, color: selfiePhoto?PLUM:MUTED, cursor:"pointer" } },
+                selfiePhoto ? "\u2713 Selfie caricato" : "Upload selfie",
+                h("input", { type:"file", accept:"image/*", onChange:onSelfiePhoto, style:{ display:"none" } })
+              )
+            ),
+            h("button", { type:"button", onClick:verifyDoc, disabled: !docPhoto || !selfiePhoto || docVerifying, style:{ width:"100%", padding:"9px 0", borderRadius:10, border:"none", background: (!docPhoto||!selfiePhoto) ? "#DDD8CE" : GRADIENT, color:"#fff", fontSize:12.5, fontWeight:700 } }, docVerifying ? "Verifying..." : "Verify identity")
+          )
+    ),
+    error && h("p", { style:{ fontSize:12.5, color:CORAL, fontWeight:600, margin:"0 0 10px", lineHeight:1.5 } }, error),
+    h("button", { onClick:submit, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, marginBottom: 12, boxShadow:"0 6px 16px rgba(255,107,74,0.35)" } }, ctaLabel || "Start swiping")
+  );
+}
+
+function compatibilityScore(profile, me) {
+  let score = 0;
+  if (me) {
+    const myLangs = me.languages || [], myOffers = me.offers || [], mySeeks = me.seeks || [], myTags = me.tags || [];
+    score += (profile.languages || []).filter(l => myLangs.includes(l)).length;
+    score += (profile.tags || []).filter(t => myTags.includes(t)).length * 1.5;
+    score += (profile.offers || []).filter(o => mySeeks.includes(o)).length;
+    score += (profile.seeks || []).filter(s => myOffers.includes(s)).length;
+  }
+  if (profile.updates && profile.updates.length) score += 0.5; // leggero bonus per attivita recente
+  return score;
+}
+
+function weightedShuffle(list, me) {
+  const pool = list.map(p => ({ p, w: 1 + compatibilityScore(p, me) * 2 }));
+  const result = [];
+  while (pool.length) {
+    const total = pool.reduce((s, x) => s + x.w, 0);
+    let r = Math.random() * total;
+    let idx = 0;
+    for (; idx < pool.length; idx++) { r -= pool[idx].w; if (r <= 0) break; }
+    if (idx >= pool.length) idx = pool.length - 1;
+    result.push(pool[idx].p);
+    pool.splice(idx, 1);
+  }
+  return result;
+}
+
+function matchesFilters(profile, industryFilters, languageFilters, roleFilters, locationFilters) {
+  if (industryFilters.length && !industryFilters.some(t => profile.tags.includes(t))) return false;
+  if (languageFilters.length && !languageFilters.some(l => (profile.languages||[]).includes(l))) return false;
+  if (roleFilters.length) {
+    const roles = [...(profile.offers||[]), ...(profile.seeks||[])];
+    if (!roleFilters.some(r => roles.includes(r))) return false;
+  }
+  if (locationFilters.length && !locationFilters.includes(profile.country)) return false;
+  return true;
+}
+
+const LOCATION_OPTIONS = ["Anywhere", ...Array.from(new Set(DEMO_PROFILES.map(p => p.country)))];
+const ALL_INDUSTRY_TAGS = Array.from(new Set([...SUGGESTED_INDUSTRIES, ...DEMO_PROFILES.flatMap(p => p.tags)])).sort();
+
+function ResultRow({ profile, onLike, onView, liked, me }) {
+  const myTags = (me && me.tags) || [];
+  return h("div", { onClick:()=>onView(profile), style:{ background:CARD, borderRadius:16, padding:"10px 12px", marginBottom:8, display:"flex", gap:10, alignItems:"center", boxShadow:SHADOW, cursor:"pointer" } },
+    h(Avatar, { photo:profile.photo, initials:profile.initials, size:44 }),
+    h("div", { style:{ flex:1, minWidth:0 } },
+      h("div", { style:{ display:"flex", alignItems:"center", gap:5, marginBottom:2 } },
+        h("p", { style:{ margin:0, fontSize:13.5, fontWeight:700, color:INK } }, profile.name + " " + (profile.surname||"") + " \u00b7 " + profile.city + ", " + profile.country),
+        profile.docVerified && h("span", { title:"Identity verified", style:{ fontSize:9.5, background:"#E4F7EE", color:"#1E9E64", fontWeight:800, padding:"1px 6px", borderRadius:20, flexShrink:0 } }, "\u2713")
+      ),
+      h("div", { style:{ display:"flex", flexWrap:"wrap", gap:4 } }, profile.tags.map(t => h(Tag, { key:t, tone:"plum", highlight: myTags.includes(t) }, t)))
+    ),
+    h("button", { onClick:(e)=>{ e.stopPropagation(); onLike(profile); }, disabled:liked, style:{ flexShrink:0, padding:"7px 14px", borderRadius:10, border:"none", background: liked ? "#EEE9F5" : GRADIENT, color: liked ? MUTED : "#fff", fontSize:12, fontWeight:700 } }, liked ? "Added" : "Like")
+  );
+}
+
+function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpdates, me }) {
+  const photos = (profile.photos && profile.photos.length) ? profile.photos : (profile.photo ? [profile.photo] : []);
+  const [idx, setIdx] = useState(0);
+  const [showMutuals, setShowMutuals] = useState(false);
+  const p = profile;
+  const mutualFriendsList = getMutualFriends(p);
+  const allUpdates = [...((liveUpdates && liveUpdates[p.id]) || []), ...(p.updates || [])];
+  const myLangs = (me && me.languages) || [];
+  const myOffers = (me && me.offers) || [];
+  const mySeeks = (me && me.seeks) || [];
+  const next = () => setIdx(i => Math.min(i + 1, photos.length - 1));
+  const prev = () => setIdx(i => Math.max(i - 1, 0));
+
+  return h("div", { onClick:onClose, style:{ position:"fixed", inset:0, background:"rgba(42,33,64,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16, animation:"tvFadeIn 0.2s ease" } },
+    h("div", { onClick:e=>e.stopPropagation(), style:{ background:CARD, borderRadius:24, width:"100%", maxWidth:380, maxHeight:"92vh", overflowY:"auto", boxShadow:SHADOW, animation:"tvPopIn 0.25s ease" } },
+      h("div", { style:{ position:"relative", height:280, background: bgGradientForProfile(p), borderRadius:"24px 24px 0 0", overflow:"hidden" } },
+        photos.length > 0
+          ? h("img", { src:photos[idx], alt:"", style:{ width:"100%", height:"100%", objectFit:"cover" } })
+          : h("div", { style:{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:800, fontSize:40, color:PLUM } }, p.initials),
+        photos.length > 1 && h("div", { style:{ position:"absolute", top:10, left:10, right:10, display:"flex", gap:4 } },
+          photos.map((_, i) => h("div", { key:i, style:{ flex:1, height:3, borderRadius:2, background: i===idx ? "#fff" : "rgba(255,255,255,0.45)" } }))
+        ),
+        photos.length > 1 && h("div", { style:{ position:"absolute", inset:0, display:"flex" } },
+          h("div", { onClick:prev, style:{ flex:1, cursor:"pointer" } }),
+          h("div", { onClick:next, style:{ flex:1, cursor:"pointer" } })
+        ),
+        h("button", { onClick:onClose, style:{ position:"absolute", top:12, right:12, width:32, height:32, borderRadius:"50%", border:"none", background:"rgba(0,0,0,0.35)", color:"#fff", fontSize:15 } }, "\u2715")
+      ),
+      h("div", { style:{ padding:"1.2rem 1.3rem" } },
+        h("div", { style:{ display:"flex", alignItems:"center", gap:6, marginBottom:2 } },
+          h("p", { style:{ fontWeight:800, fontSize:19, margin:0, color:INK } }, [p.name, p.surname].filter(Boolean).join(" ") + (p.age ? ", " + p.age : "")),
+          p.docVerified && h("span", { style:{ fontSize:11, background:"#E4F7EE", color:"#1E9E64", fontWeight:700, padding:"2px 7px", borderRadius:20 } }, "\u2713 Verificato")
+        ),
+        h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 14px" } }, (p.city ? p.city + ", " + p.country : p.country) + "  \u2192  " + p.targetCountry),
+        h("p", { style:{ fontSize:12, color:MUTED, margin:"0 0 4px" } }, totalFriendsCount(p.id) + " friends on Twinventure"),
+        h("button", { onClick:()=>setShowMutuals(s=>!s), style:{ border:"none", background:"none", padding:0, display:"flex", alignItems:"center", gap:5, marginBottom: showMutuals ? 8 : 14, cursor:"pointer" } },
+          h("span", { style:{ fontSize:12.5, color:PLUM, fontWeight:600 } }, "\u{1F465} " + mutualFriendsList.length + " mutual friend" + (mutualFriendsList.length===1?"":"s")),
+          mutualFriendsList.length > 0 && h("span", { style:{ fontSize:10, color:PLUM } }, showMutuals ? "\u25B4" : "\u25BE")
+        ),
+        showMutuals && mutualFriendsList.length > 0 && h("div", { style:{ background:"#F9F7FC", borderRadius:12, padding:10, marginBottom:14, display:"flex", flexDirection:"column", gap:8 } },
+          mutualFriendsList.map(f => h("div", { key:f.id, style:{ display:"flex", alignItems:"center", gap:8 } },
+            h(Avatar, { photo:f.photo, initials:f.initials, size:28 }),
+            h("span", { style:{ fontSize:12.5, color:INK, fontWeight:600 } }, f.name + " " + (f.surname||""))
+          ))
+        ),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:14 } }, (p.tags||[]).map(t => h(Tag, { key:t, tone:"plum" }, t))),
+        h("p", { style:{ fontSize:15, lineHeight:1.65, color:INK, margin:"0 0 16px" } }, p.bio),
+        (p.languages||[]).length > 0 && h("div", { style:{ display:"flex", gap:6, marginBottom:16, alignItems:"flex-start" } },
+          h("span", { style:{ fontSize:12, color:MUTED, minWidth:48, marginTop:4, fontWeight:700 } }, "Lingue"),
+          h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, (p.languages||[]).map(t => h(Tag, { key:t, tone:"gray", highlight: myLangs.includes(t) }, t)))
+        ),
+        h("div", { style:{ display:"flex", gap:6, marginBottom:8, alignItems:"flex-start" } },
+          h("span", { style:{ fontSize:12, color:MUTED, minWidth:48, marginTop:4, fontWeight:700 } }, "Offre"),
+          h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, (p.offers||[]).map(t => h(Tag, { key:t, tone:"coral", highlight: myOffers.includes(t) }, t)))
+        ),
+        h("div", { style:{ display:"flex", gap:6, marginBottom:16, alignItems:"flex-start" } },
+          h("span", { style:{ fontSize:12, color:MUTED, minWidth:48, marginTop:4, fontWeight:700 } }, "Search"),
+          h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, (p.seeks||[]).map(t => h(Tag, { key:t, tone:"gray", highlight: mySeeks.includes(t) }, t)))
+        ),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: (allUpdates.length) ? 16 : 0 } }, (p.mindset||[]).map(t => h(Tag, { key:t, tone:"gray" }, t))),
+        (allUpdates.length > 0) && h("div", { style:{ marginBottom: allowActions ? 20 : 0 } },
+          h("p", { style:{ fontSize:12, color:MUTED, fontWeight:700, margin:"0 0 8px" } }, "Aggiornamenti recenti"),
+          h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } }, allUpdates.map((u, i) => h("div", { key:i, style:{ display:"flex", alignItems:"flex-start", gap:8 } },
+            h("div", { style:{ width:6, height:6, borderRadius:"50%", background:CORAL, marginTop:6, flexShrink:0 } }),
+            h("div", null,
+              h("p", { style:{ margin:0, fontSize:13, color:INK } }, u.text),
+              h("p", { style:{ margin:0, fontSize:11, color:MUTED } }, u.time)
+            )
+          )))
+        ),
+        allowActions && h("div", { style:{ display:"flex", justifyContent:"center", gap:20 } },
+          h("button", { onClick:()=>{ onPass(); onClose(); }, style:{ width:54, height:54, borderRadius:"50%", border:"none", background:"#F4F1F8", fontSize:20, color:MUTED } }, "\u2715"),
+          h("button", { onClick:()=>{ onLike(); onClose(); }, style:{ width:54, height:54, borderRadius:"50%", border:"none", background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 8px 20px rgba(255,107,74,0.4)" } }, h(IconBriefcase, { size:22, color:"#fff" }))
+        )
+      )
+    )
+  );
+}
+
+function FilterDropdown({ label, options, selected, onToggle, isOpen, onToggleOpen, tone }) {
+  const activeColor = tone === "coral" ? CORAL : PLUM;
+  const activeBg = tone === "coral" ? CORAL_BG : PLUM_BG;
+  return h("div", { style:{ position:"relative", marginBottom:10 } },
+    h("button", { type:"button", onClick:onToggleOpen, style:{ width:"100%", padding:11, borderRadius:12, border: selected.length ? `1.5px solid ${activeColor}` : `1.5px solid ${BORDER}`, background: selected.length ? activeBg : CARD, display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13.5, color: selected.length ? activeColor : INK, fontWeight: selected.length ? 700 : 400 } },
+      h("span", null, label + (selected.length ? " (" + selected.length + ")" : "")),
+      h("span", { style:{ fontSize:11 } }, isOpen ? "\u25B4" : "\u25BE")
+    ),
+    isOpen && h(React.Fragment, null,
+      h("div", { onClick:onToggleOpen, style:{ position:"fixed", inset:0, zIndex:1100 } }),
+      h("div", { style:{ position:"absolute", top:"100%", left:0, right:0, background:CARD, borderRadius:12, boxShadow:SHADOW, zIndex:1101, marginTop:4, padding:10, display:"flex", flexWrap:"wrap", gap:6, maxHeight:220, overflowY:"auto" } },
+        options.map(opt => h("button", { key:opt, type:"button", onClick:()=>onToggle(opt), style:{ fontSize:12, padding:"5px 12px", borderRadius:20, border: selected.includes(opt) ? `1.5px solid ${activeColor}` : `1.5px solid ${BORDER}`, background: selected.includes(opt) ? activeBg : CARD, color: selected.includes(opt) ? activeColor : MUTED, fontWeight:600 } }, opt))
+      )
+    )
+  );
+}
+
+function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap, matchCount, blockedIds, passedIds, matchedIds, sentLikes, liveUpdates, me, initialSearchOpen, industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters, recentSearches, setRecentSearches }) {
+  const [index, setIndex] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [lastSwipe, setLastSwipe] = useState(null);
+  const [noTransition, setNoTransition] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(() => !!initialSearchOpen);
+  const [openFilterPanel, setOpenFilterPanel] = useState(null);
+  const [likedIds, setLikedIds] = useState([]);
+  const [hasDragged, setHasDragged] = useState(false);
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const startX = useRef(0);
+  const cardRef = useRef(null);
+
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const blockScroll = (e) => { if (dragging && e.cancelable) e.preventDefault(); };
+    el.addEventListener("touchmove", blockScroll, { passive:false });
+    return () => el.removeEventListener("touchmove", blockScroll);
+  }, [dragging]);
+  const [frozenProfile, setFrozenProfile] = useState(null);
+
+  const [orderedIds] = useState(() => weightedShuffle(DEMO_PROFILES, me).map(p => p.id));
+  const available = orderedIds.map(id => DEMO_PROFILES.find(p => p.id === id)).filter(p => p && !blockedIds.includes(p.id) && !passedIds.includes(p.id) && !matchedIds.includes(p.id) && !(sentLikes||[]).includes(p.id) && (!me || p.id !== me.id));
+  const profile = frozenProfile || (available.length ? available[index % available.length] : null);
+
+  const searchResults = available.filter(p => matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
+  const mapResults = DEMO_PROFILES.filter(p => !blockedIds.includes(p.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
+  const filtersActive = !!(industryFilters.length || languageFilters.length || roleFilters.length || locationFilters.length);
+
+  const toggleFilter = (list, setList, v) => setList(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
+
+  const closeSearch = () => {
+    if (filtersActive) {
+      const label = [industryFilters.join("+"), languageFilters.join("+"), roleFilters.join("+"), locationFilters.join("+")].filter(Boolean).join(" \u00b7 ");
+      const snapshot = { label, industryFilters, languageFilters, roleFilters, locationFilters };
+      setRecentSearches(prev => [snapshot, ...prev.filter(s => s.label !== label)].slice(0, 5));
+    }
+    setSearchOpen(false);
+  };
+  const applyRecent = (s) => { setIndustryFilters(s.industryFilters); setLanguageFilters(s.languageFilters); setRoleFilters(s.roleFilters); setLocationFilters(s.locationFilters); setSearchOpen(true); };
+
+  const likeFromSearch = (p) => {
+    onMatch(p);
+    setLikedIds(ids => ids.includes(p.id) ? ids : [...ids, p.id]);
+  };
+
+  const getX = (e) => (e.touches ? e.touches[0].clientX : e.clientX);
+  const onDown = (e) => { setDragging(true); setHasDragged(false); startX.current = getX(e); if (e.cancelable) e.preventDefault(); };
+  const onMoveEv = (e) => { if (!dragging) return; if (e.cancelable) e.preventDefault(); const o = getX(e) - startX.current; if (Math.abs(o) > 6) setHasDragged(true); setOffset(o); };
+  const onUp = () => {
+    if (!dragging) return;
+    setDragging(false);
+    if (!hasDragged) { setOffset(0); if (profile) setViewingProfile(profile); return; }
+    if (offset > 90) commit(true);
+    else if (offset < -90) commit(false);
+    else setOffset(0);
+  };
+
+  const commit = (liked) => {
+    if (!profile) return;
+    const swipedProfile = profile;
+    setFrozenProfile(swipedProfile);
+    setDragging(false);
+    setNoTransition(false);
+    setOffset(liked ? 700 : -700);
+    if (liked) onMatch(swipedProfile);
+    else if (onPassProfile) onPassProfile(swipedProfile.id);
+    setTimeout(() => {
+      setNoTransition(true);
+      setOffset(0);
+      setIndex(i => i + 1);
+      setLastSwipe({ profile:swipedProfile, liked });
+      setFrozenProfile(null);
+      setTimeout(() => setNoTransition(false), 30);
+    }, 260);
+  };
+
+  const onUndo = () => {
+    if (!lastSwipe) return;
+    const dir = lastSwipe.liked ? 700 : -700;
+    if (lastSwipe.liked && onUndoMatch) onUndoMatch(lastSwipe.profile.id);
+    if (!lastSwipe.liked && onUndoPass) onUndoPass(lastSwipe.profile.id);
+    setNoTransition(true);
+    setIndex(i => Math.max(0, i - 1));
+    setOffset(dir);
+    setLastSwipe(null);
+    setTimeout(() => {
+      setNoTransition(false);
+      setOffset(0);
+    }, 30);
+  };
+
+  const handleLikeFromDetail = () => {
+    if (viewingProfile && profile && viewingProfile.id === profile.id) { commit(true); return; }
+    if (viewingProfile) {
+      onMatch(viewingProfile);
+      setLikedIds(ids => ids.includes(viewingProfile.id) ? ids : [...ids, viewingProfile.id]);
+      setViewingProfile(null);
+    }
+  };
+  const handlePassFromDetail = () => {
+    if (viewingProfile && profile && viewingProfile.id === profile.id) { commit(false); return; }
+    setViewingProfile(null);
+  };
+
+  const rotation = offset / 18;
+  const likeOp = Math.min(Math.max(offset / 90, 0), 1);
+  const passOp = Math.min(Math.max(-offset / 90, 0), 1);
+
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "Discover"),
+
+    !profile && h("div", { style:{ textAlign:"center", padding:"50px 20px" } },
+      h("div", { style:{ display:"flex", justifyContent:"center", marginBottom:14 } }, h(IconBriefcase, { size:36, color:MUTED })),
+      h("p", { style:{ fontSize:15, fontWeight:700, color:INK, margin:"0 0 6px" } }, "You've seen all available profiles"),
+      h("p", { style:{ fontSize:12.5, color:MUTED, margin:0, lineHeight:1.6 } }, "Come back later for new profiles, or go to Settings to restore the ones you passed on.")
+    ),
+
+    profile && h("div", { style:{ position:"relative", display:"flex", justifyContent:"center" } },
+      h("div", {
+        ref:cardRef,
+        onMouseDown:onDown, onMouseMove:onMoveEv, onMouseUp:onUp, onMouseLeave:onUp,
+        onTouchStart:onDown, onTouchMove:onMoveEv, onTouchEnd:onUp,
+        style:{
+          transform:`translateX(${offset}px) rotate(${rotation}deg)`,
+          transition: noTransition ? "none" : "transform 0.26s ease",
+          touchAction:"none", userSelect:"none",
+          cursor: dragging ? "grabbing" : "grab",
+          position:"relative"
+        }
+      },
+        h(ProfileCard, { profile, me }),
+        h("div", { style:{ position:"absolute", top:20, left:20, border:`3px solid ${PLUM}`, color:PLUM, padding:"4px 10px", borderRadius:8, fontWeight:800, fontSize:17, transform:"rotate(-12deg)", opacity:likeOp, pointerEvents:"none", background:"rgba(255,255,255,0.85)" } }, "MI PIACE"),
+        h("div", { style:{ position:"absolute", top:20, right:20, border:`3px solid ${CORAL}`, color:CORAL, padding:"4px 10px", borderRadius:8, fontWeight:800, fontSize:17, transform:"rotate(12deg)", opacity:passOp, pointerEvents:"none", background:"rgba(255,255,255,0.85)" } }, "PASSO")
+      )
+    ),
+    !searchOpen && profile && h("div", { style:{ display:"flex", justifyContent:"center", alignItems:"center", gap:16, marginTop:20 } },
+      h("button", { onClick:onUndo, disabled:!lastSwipe, title:"Torna indietro (max 1 swipe)", style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:SHADOW, opacity: lastSwipe ? 1 : 0.5 } }, h(IconUndo, { size:24, color: lastSwipe ? "#D4A72C" : "#C7C2B8" })),
+      h("button", { onClick:()=>commit(false), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, fontSize:21, color:MUTED, boxShadow:SHADOW } }, "\u2715"),
+      h("button", { onClick:()=>commit(true), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 8px 20px rgba(255,107,74,0.4)" } }, h(IconBriefcase, { size:23, color:"#fff" }))
+    ),
+    !searchOpen && profile && h("p", { style:{ textAlign:"center", fontSize:12, color:MUTED, marginTop:14 } }, "Drag the card to respond, tap to view the profile"),
+    viewingProfile && h(ProfileDetail, { profile:viewingProfile, onClose:()=>setViewingProfile(null), onLike:handleLikeFromDetail, onPass:handlePassFromDetail, allowActions:true, liveUpdates, me })
+  );
+}
+
+function ReceivedLikes({ likes, onLikeBack, onPass }) {
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "People who liked you"),
+    likes.length===0 && h("p", { style:{ fontSize:14, color:MUTED } }, "No likes received yet."),
+    likes.map(p => h("div", { key:p.id, style:{ background:CARD, borderRadius:18, padding:"12px 14px", marginBottom:10, display:"flex", gap:12, alignItems:"flex-start", boxShadow:SHADOW } },
+      h(Avatar, { photo:p.photo, initials:p.initials, size:48 }),
+      h("div", { style:{ flex:1 } },
+        h("p", { style:{ margin:"0 0 4px", fontSize:14, fontWeight:700, color:INK } }, p.name + " " + p.surname + ", " + p.age + " \u00b7 " + p.country + " \u2192 " + p.targetCountry),
+        h("div", { style:{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:6 } }, p.tags.map(t=>h(Tag,{key:t,tone:"plum"},t))),
+        h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 10px", lineHeight:1.5 } }, p.bio),
+        h("div", { style:{ display:"flex", gap:8 } },
+          h("button", { onClick:()=>onPass(p.id), style:{ flex:1, padding:"7px 0", borderRadius:10, border:`1.5px solid ${BORDER}`, background:CARD, fontSize:12.5, color:MUTED, fontWeight:600 } }, "Ignore"),
+          h("button", { onClick:()=>onLikeBack(p), style:{ flex:1, padding:"7px 0", borderRadius:10, border:"none", background:GRADIENT, color:"#fff", fontSize:12.5, fontWeight:700 } }, "Like them back")
+        )
+      )
+    ))
+  );
+}
+
+function ChatList({ matches, unreadCounts, onOpen }) {
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "Your chats"),
+    matches.length===0 && h("p", { style:{ fontSize:14, color:MUTED } }, "No matches yet. Go to Discover to get started."),
+    matches.map(m => h("button", { key:m.id, onClick:()=>onOpen(m), style:{ width:"100%", display:"flex", alignItems:"center", gap:12, padding:"10px", borderRadius:16, marginBottom:6, border:"none", background:CARD, textAlign:"left", boxShadow:SHADOW } },
+      h("div", { style:{ position:"relative", flexShrink:0 } },
+        h(Avatar, { photo:m.photo, initials:m.initials, size:44 }),
+        !!unreadCounts[m.id] && h("span", { style:{ position:"absolute", top:-4, right:-4, minWidth:18, height:18, borderRadius:"50%", background:CORAL, border:"2px solid " + CARD, color:"#fff", fontSize:10, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" } }, unreadCounts[m.id])
+      ),
+      h("div", null,
+        h("p", { style:{ margin:0, fontSize:14, fontWeight:700, color:INK } }, m.name),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, m.tags[0] + " \u00b7 " + m.country + " \u2192 " + m.targetCountry)
+      )
+    ))
+  );
+}
+
+function Chat({ match, messages, onSend, onBack, onDeleteChat, onBlock, onReport, liveUpdates, me }) {
+  const [input, setInput] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [viewingProfile, setViewingProfile] = useState(false);
+
+  const send = () => {
+    if (!input.trim()) return;
+    onSend(input.trim());
+    setInput("");
+  };
+
+  const runConfirm = () => {
+    if (confirmAction === "delete") onDeleteChat(match.id);
+    if (confirmAction === "block") onBlock(match.id);
+    if (confirmAction === "report") onReport(match.id);
+    setConfirmAction(null);
+    onBack();
+  };
+
+  const confirmText = {
+    delete: "Delete this chat? You won't be able to see it again.",
+    block: "Block " + match.name + "? You won't see each other anymore.",
+    report: "Report " + match.name + "? The profile will be blocked and the report sent to our team.",
+  };
+
+  return h("div", { style:{ maxWidth:380, margin:"0 auto", display:"flex", flexDirection:"column", height:"calc(100vh - " + (NAV_H + 40) + "px)", position:"relative" } },
+    h("div", { style:{ marginBottom:10 } }, h(BackButton, { onClick:onBack, label:"Back" })),
+    h("div", { style:{ display:"flex", alignItems:"center", gap:8, marginBottom: confirmAction ? 8 : 16 } },
+      h("button", { onClick:()=>setViewingProfile(true), style:{ display:"flex", alignItems:"center", gap:8, flex:1, border:"none", background:"none", padding:0, textAlign:"left", cursor:"pointer" } },
+        h(Avatar, { photo:match.photo, initials:match.initials, size:34 }),
+        h("p", { style:{ fontSize:16, fontWeight:700, color:INK, margin:0 } }, match.name)
+      ),
+      h("div", { style:{ position:"relative" } },
+        h("button", { onClick:()=>setMenuOpen(o=>!o), style:{ border:"none", background:"none", fontSize:18, color:MUTED, padding:"0 6px" } }, "\u22EE"),
+        menuOpen && h(React.Fragment, null,
+          h("div", { onClick:()=>setMenuOpen(false), style:{ position:"fixed", inset:0, zIndex:1100 } }),
+          h("div", { style:{ position:"absolute", top:"100%", right:0, background:CARD, borderRadius:12, boxShadow:SHADOW, zIndex:1101, marginTop:4, width:180, overflow:"hidden" } },
+            h("button", { onClick:()=>{ setConfirmAction("report"); setMenuOpen(false); }, style:{ width:"100%", textAlign:"left", padding:"10px 14px", border:"none", background:"none", fontSize:13, color:CORAL, fontWeight:600 } }, "Report"),
+            h("button", { onClick:()=>{ setConfirmAction("block"); setMenuOpen(false); }, style:{ width:"100%", textAlign:"left", padding:"10px 14px", border:"none", background:"none", fontSize:13, color:CORAL, fontWeight:600 } }, "Block"),
+            h("button", { onClick:()=>{ setConfirmAction("delete"); setMenuOpen(false); }, style:{ width:"100%", textAlign:"left", padding:"10px 14px", border:"none", background:"none", fontSize:13, color:MUTED, fontWeight:600 } }, "Delete chat")
+          )
+        )
+      )
+    ),
+    confirmAction && h("div", { style:{ background:"#FFF3EF", border:`1px solid ${CORAL_BG}`, borderRadius:12, padding:"10px 12px", marginBottom:14 } },
+      h("p", { style:{ fontSize:12.5, color:INK, margin:"0 0 8px", lineHeight:1.5 } }, confirmText[confirmAction]),
+      h("div", { style:{ display:"flex", gap:8 } },
+        h("button", { onClick:()=>setConfirmAction(null), style:{ flex:1, padding:"6px 0", borderRadius:8, border:`1px solid ${BORDER}`, background:CARD, fontSize:12, color:MUTED, fontWeight:600 } }, "Cancel"),
+        h("button", { onClick:runConfirm, style:{ flex:1, padding:"6px 0", borderRadius:8, border:"none", background:CORAL, color:"#fff", fontSize:12, fontWeight:700 } }, "Confirm")
+      )
+    ),
+    h("div", { style:{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:8 } },
+      messages.length === 0 && h("p", { style:{ fontSize:12.5, color:MUTED, textAlign:"center", marginTop:20 } }, "No messages yet. Write the first one!"),
+      messages.map((m,i) => h("div", { key:i, style:{ alignSelf: m.from==="me"?"flex-end":"flex-start", background: m.from==="me"?GRADIENT:"#F4F1F8", color: m.from==="me"?"#fff":INK, padding:"9px 13px", borderRadius:16, fontSize:13.5, maxWidth:"80%" } }, m.text))
+    ),
+    h("div", { style:{ display:"flex", gap:8, marginTop:12 } },
+      h("input", { value:input, onChange:e=>setInput(e.target.value), onKeyDown:e=>e.key==="Enter"&&send(), placeholder:"Write a message", style:{ flex:1, padding:11, borderRadius:20, border:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+      h("button", { onClick:send, style:{ width:42, height:42, borderRadius:"50%", border:"none", background:GRADIENT, color:"#fff" } }, "\u27a4")
+    ),
+    viewingProfile && h(ProfileDetail, { profile:match, onClose:()=>setViewingProfile(false), allowActions:false, liveUpdates, me })
+  );
+}
+
+function ProfileScreen({ me, onEdit, onSettings }) {
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "Your profile"),
+    h("div", { style:{ display:"flex", justifyContent:"center" } }, h(ProfileCard, { profile: me, hideMutuals:true })),
+    h("button", { onClick:onEdit, style:{ width:"100%", marginTop:16, padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:PLUM, boxShadow:SHADOW } }, "Edit profile"),
+    h("button", { onClick:onSettings, style:{ width:"100%", marginTop:10, padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:INK, boxShadow:SHADOW } }, "Settings")
+  );
+}
+
+function BottomNav({ screen, setScreen, onOpenMap, likesCount, unreadMsgCount, t }) {
+  const items = [
+    { key:"swipe", label:t("navDiscover"), Icon:IconBriefcase },
+    { key:"map", label:t("navMap"), Icon:IconMap, onClick:onOpenMap },
+    { key:"likes", label:t("navLikes"), Icon:IconStar, badge:likesCount },
+    { key:"chatlist", label:t("navChat"), Icon:IconMessageCircle, badge:unreadMsgCount },
+    { key:"profile", label:t("navProfile"), Icon:IconUser },
+  ];
+  return h("div", { style:{ position:"fixed", bottom:0, left:0, right:0, background:CARD, boxShadow:"0 -4px 20px rgba(91,58,142,0.08)", display:"flex", justifyContent:"center", zIndex:10 } },
+    h("div", { style:{ width:"100%", maxWidth:420, display:"flex" } },
+      items.map(it => h("button", {
+        key:it.key,
+        onClick: it.onClick || (()=>setScreen(it.key)),
+        style:{ flex:1, border:"none", background:"none", padding:"11px 0 9px", display:"flex", flexDirection:"column", alignItems:"center", gap:2, position:"relative" }
+      },
+        h("div", { style:{ height:20, display:"flex", alignItems:"center", justifyContent:"center" } },
+          h(it.Icon, { size:18, color: screen===it.key ? CORAL : MUTED })
+        ),
+        h("span", { style:{ fontSize:10.5, color: screen===it.key ? CORAL : MUTED, fontWeight: screen===it.key ? 700 : 500 } }, it.label),
+        !!it.badge && h("span", { style:{ position:"absolute", top:5, right:"20%", background:GRADIENT, color:"#fff", fontSize:9, fontWeight:800, borderRadius:10, minWidth:16, height:16, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px" } }, it.badge)
+      ))
+    )
+  );
+}
+
+function MatchScreen({ me, celebration, onSend, onSkip }) {
+  const [text, setText] = useState("");
+  const p = celebration.profile;
+  const myPhoto = me && me.photos && me.photos[0];
+
+  return h("div", { style:{ position:"fixed", inset:0, background:"linear-gradient(160deg, rgba(255,107,74,0.97) 0%, rgba(91,58,142,0.97) 100%)", zIndex:60, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px 20px", textAlign:"center", animation:"tvFadeIn 0.3s ease" } },
+    h("p", { style:{ color:"rgba(255,255,255,0.85)", fontSize:12.5, fontWeight:800, letterSpacing:2, textTransform:"uppercase", margin:"0 0 10px" } }, "It's a match"),
+    h("p", { style:{ color:"#fff", fontSize:27, fontWeight:800, margin:"0 0 28px", maxWidth:320, lineHeight:1.25 } }, celebration.phrase),
+    h("div", { style:{ position:"relative", height:96, width:150, marginBottom:22 } },
+      h("div", { style:{ position:"absolute", left:0, top:0, animation:"tvAvatarInLeft 0.4s ease" } }, h(Avatar, { photo:myPhoto, initials: me ? me.initials : "TU", size:92 })),
+      h("div", { style:{ position:"absolute", right:0, top:0, animation:"tvAvatarInRight 0.4s ease" } }, h(Avatar, { photo:p.photo, initials:p.initials, size:92 }))
+    ),
+    h("p", { style:{ color:"rgba(255,255,255,0.92)", fontSize:14, margin:"0 0 20px" } }, "You and " + p.name + " both said yes."),
+    h("div", { style:{ width:"100%", maxWidth:340, background:"#fff", borderRadius:20, padding:14, boxShadow:"0 14px 34px rgba(0,0,0,0.25)", animation:"tvPopIn 0.35s ease" } },
+      h("textarea", { value:text, onChange:e=>setText(e.target.value), rows:3, placeholder:"Write the first message to " + p.name + "...", style:{ width:"100%", border:"none", resize:"none", fontSize:14, fontFamily:"inherit", boxSizing:"border-box", color:INK } }),
+      h("button", { onClick:()=>{ if (text.trim()) onSend(text.trim()); }, disabled: !text.trim(), style:{ width:"100%", marginTop:8, padding:12, borderRadius:12, border:"none", background: text.trim() ? GRADIENT : "#DDD8CE", color:"#fff", fontWeight:700, fontSize:14 } }, "Send the first message")
+    ),
+    h("button", { onClick:onSkip, style:{ marginTop:16, border:"none", background:"none", color:"rgba(255,255,255,0.85)", fontSize:13, fontWeight:600, textDecoration:"underline" } }, "Keep discovering")
+  );
+}
+
+function sharedTraitsText(p, me) {
+  if (!me) return "";
+  const sharedTags = (p.tags || []).filter(t => (me.tags||[]).includes(t));
+  return sharedTags.join(", ");
+}
+
+function LocationFilterPicker({ selected, onToggle, onClear, popularOptions, allOptions }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const typing = query.trim().length > 0;
+  const list = typing ? allOptions.filter(c => c.toLowerCase().includes(query.trim().toLowerCase())) : popularOptions;
+  return h("div", { style:{ position:"relative", marginBottom:10 } },
+    h("button", { type:"button", onClick:()=>setOpen(o=>!o), style:{ width:"100%", padding:11, borderRadius:12, border: selected.length ? `1.5px solid ${PLUM}` : `1.5px solid ${BORDER}`, background: selected.length ? PLUM_BG : CARD, display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:13.5, color: selected.length ? PLUM : INK, fontWeight: selected.length ? 700 : 400 } },
+      h("span", null, "Location" + (selected.length ? " (" + selected.length + ")" : "")),
+      h("span", { style:{ fontSize:11 } }, open ? "\u25B4" : "\u25BE")
+    ),
+    open && h(React.Fragment, null,
+      h("div", { onClick:()=>{ setOpen(false); setQuery(""); }, style:{ position:"fixed", inset:0, zIndex:1100 } }),
+      h("div", { style:{ position:"absolute", top:"100%", left:0, right:0, background:CARD, borderRadius:12, boxShadow:SHADOW, zIndex:1101, marginTop:4, maxHeight:260, display:"flex", flexDirection:"column" } },
+        h("input", { autoFocus:true, value:query, onChange:e=>setQuery(e.target.value), placeholder:"Search for a country...", style:{ padding:10, border:"none", borderBottom:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+        h("div", { style:{ overflowY:"auto", padding:10, display:"flex", flexWrap:"wrap", gap:6 } },
+          !typing && h("button", { type:"button", onClick:onClear, style:{ fontSize:12, padding:"5px 12px", borderRadius:20, border: selected.length===0 ? `1.5px solid ${PLUM}` : `1.5px solid ${BORDER}`, background: selected.length===0 ? PLUM_BG : CARD, color: selected.length===0 ? PLUM : MUTED, fontWeight:700 } }, "Anywhere"),
+          !typing && h("p", { style:{ width:"100%", fontSize:10.5, color:MUTED, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, margin:"4px 0 2px" } }, "Popular"),
+          list.length===0 && h("p", { style:{ fontSize:13, color:MUTED, margin:0 } }, "No country found."),
+          list.map(c => h("button", { key:c, type:"button", onClick:()=>onToggle(c), style:{ fontSize:12, padding:"5px 12px", borderRadius:20, border: selected.includes(c) ? `1.5px solid ${PLUM}` : `1.5px solid ${BORDER}`, background: selected.includes(c) ? PLUM_BG : CARD, color: selected.includes(c) ? PLUM : MUTED, fontWeight:600 } }, c))
+        )
+      )
+    )
+  );
+}
+
+function MapScreen({ blockedIds, liveUpdates, me, matchedIds, industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters }) {
+  const containerRef = useRef(null);
+  const [viewingProfile, setViewingProfile] = useState(null);
+  const [openFilterPanel, setOpenFilterPanel] = useState(null);
+  const [viewMode, setViewMode] = useState("map");
+  const [likedIds, setLikedIds] = useState([]);
+  const LIST_CAP = 15;
+  const toggleFilter = (list, setList, v) => setList(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
+
+  const profiles = DEMO_PROFILES.filter(p => !blockedIds.includes(p.id) && (!me || p.id !== me.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
+  const filterKey = JSON.stringify([industryFilters, languageFilters, roleFilters, locationFilters, blockedIds]);
+
+  useEffect(() => {
+    if (viewMode !== "map" || !containerRef.current || typeof L === "undefined") return;
+    const map = L.map(containerRef.current, { zoomControl:true, maxZoom:12 }).setView([20, 10], 2);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors", maxZoom:12
+    }).addTo(map);
+
+    const clusterIconFn = function(cluster) {
+      const count = cluster.getChildCount();
+      return L.divIcon({
+        className: "",
+        html: '<div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#FF6B4A,#FFB648);border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;">' + count + "</div>",
+        iconSize:[44,44], iconAnchor:[22,22]
+      });
+    };
+    const hasClustering = typeof L.markerClusterGroup === "function";
+    const clusterGroup = hasClustering
+      ? L.markerClusterGroup({
+          iconCreateFunction: clusterIconFn,
+          showCoverageOnHover: false,
+          maxClusterRadius: function(zoom) {
+            if (zoom <= 3) return 90;  // vista mondo: raggruppa liberamente anche tra paesi vicini
+            if (zoom <= 5) return 45;  // vista continente: i paesi iniziano a separarsi
+            if (zoom <= 7) return 20;  // vista paese: solo citta davvero vicine si uniscono
+            return 10;                 // vista regione/citta: raggruppamento minimo
+          }
+        })
+      : null;
+
+    const groups = {};
+    profiles.forEach(p => {
+      if (!CITY_COORDS[p.city]) return;
+      if (!groups[p.city]) groups[p.city] = [];
+      groups[p.city].push(p);
+    });
+
+    Object.keys(groups).forEach(city => {
+      const group = groups[city];
+      const base = CITY_COORDS[city];
+      const matchedHere = group.filter(p => matchedIds && matchedIds.includes(p.id));
+      const isFriendCity = matchedHere.length > 0;
+      const first = isFriendCity ? matchedHere[0] : group[0];
+      const count = group.length;
+      const avatarHtml = first.photo
+        ? '<img src="' + first.photo + '" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />'
+        : first.initials;
+      const gradient = isFriendCity ? "linear-gradient(135deg,#5B3A8E,#8B6BC7)" : "linear-gradient(135deg,#FF6B4A,#FFB648)";
+      const friendBadgeHtml = isFriendCity
+        ? '<div style="position:absolute;top:-3px;left:-3px;background:#1E9E64;color:#fff;font-size:9px;width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;">\u2713</div>'
+        : "";
+      const badgeHtml = count > 1
+        ? '<div style="position:absolute;bottom:-4px;right:-4px;background:#5B3A8E;color:#fff;font-size:10px;font-weight:800;border-radius:10px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;border:2px solid #fff;padding:0 3px;">' + count + '</div>'
+        : "";
+      const icon = L.divIcon({
+        className: "",
+        html: '<div style="position:relative;width:38px;height:38px;">' +
+          '<div style="width:100%;height:100%;border-radius:50%;background:' + gradient + ';border:3px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;overflow:hidden;">' + avatarHtml + '</div>' +
+          friendBadgeHtml + badgeHtml + '</div>',
+        iconSize:[38,38], iconAnchor:[19,19]
+      });
+      const marker = L.marker(base, { icon });
+      if (clusterGroup) clusterGroup.addLayer(marker); else marker.addTo(map);
+      const popupDiv = document.createElement("div");
+      popupDiv.style.fontFamily = "-apple-system, sans-serif";
+      popupDiv.style.fontSize = "13px";
+      popupDiv.style.maxWidth = "220px";
+      const POPUP_CAP = 8;
+      const sortedGroup = [...group].sort((a, b) => {
+        const aHas = sharedTraitsText(a, me) ? 1 : 0;
+        const bHas = sharedTraitsText(b, me) ? 1 : 0;
+        if (bHas !== aHas) return bHas - aHas;
+        return compatibilityScore(b, me) - compatibilityScore(a, me);
+      });
+      const shown = sortedGroup.slice(0, POPUP_CAP);
+      const extra = group.length - shown.length;
+      let inner = "<strong>" + city + ", " + first.country + "</strong><br/>" +
+        '<span style="color:#8A8199;font-size:12px;">' + count + (count === 1 ? " persona" : " persone") + "</span>" +
+        '<hr style="margin:8px 0;border:none;border-top:1px solid #eee;" />' +
+        '<div style="max-height:220px;overflow-y:auto;">';
+      shown.forEach(p => {
+        const isMatch = matchedIds && matchedIds.includes(p.id);
+        const traits = sharedTraitsText(p, me);
+        inner += '<div style="display:flex;align-items:center;gap:7px;margin-bottom:7px;">' +
+          '<div style="position:relative;flex-shrink:0;">' +
+          (p.photo
+            ? '<img src="' + p.photo + '" style="width:26px;height:26px;border-radius:50%;object-fit:cover;' + (isMatch ? "border:2px solid #5B3A8E;" : "") + '" />'
+            : '<div style="width:26px;height:26px;border-radius:50%;background:#EFE7FA;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#5B3A8E;' + (isMatch ? "border:2px solid #5B3A8E;" : "") + '">' + p.initials + "</div>") +
+          "</div>" +
+          '<div style="flex:1;min-width:0;">' +
+          '<div>' + p.name + " " + (p.surname||"") + (isMatch ? ' <span style="color:#1E9E64;font-size:10px;font-weight:700;">\u2713 match</span>' : "") + '</div>' +
+          (traits ? '<div style="font-size:10px;color:#D4A72C;font-weight:600;">\u2728 ' + traits + '</div>' : "") +
+          "</div>" +
+          '<button id="mapviewbtn-' + p.id + '" style="border:none;border-radius:6px;background:#5B3A8E;color:#fff;font-size:10.5px;padding:4px 9px;cursor:pointer;flex-shrink:0;">Vedi</button>' +
+        "</div>";
+      });
+      inner += "</div>";
+      if (extra > 0) {
+        inner += '<p style="margin:4px 0 0;font-size:11px;color:#8A8199;">+' + extra + " altri in questa citta</p>";
+      }
+      popupDiv.innerHTML = inner;
+      marker.bindPopup(popupDiv);
+      marker.on("popupopen", () => {
+        shown.forEach(p => {
+          const btn = document.getElementById("mapviewbtn-" + p.id);
+          if (btn) btn.onclick = () => setViewingProfile(p);
+        });
+      });
+    });
+
+    if (clusterGroup) map.addLayer(clusterGroup);
+
+    return () => map.remove();
+  }, [filterKey, viewMode]);
+
+  return h("div", { style:{ maxWidth:460, margin:"0 auto" } },
+    h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 4px" } }, "Search and map"),
+
+    h("div", { style:{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 } },
+      h("div", { style:{ flex:"1 1 45%", minWidth:130 } }, h(FilterDropdown, { label:"Industry", options:ALL_INDUSTRY_TAGS, selected:industryFilters, onToggle:(t)=>toggleFilter(industryFilters, setIndustryFilters, t), isOpen: openFilterPanel==="industry", onToggleOpen:()=>setOpenFilterPanel(p=>p==="industry"?null:"industry"), tone:"plum" })),
+      h("div", { style:{ flex:"1 1 45%", minWidth:130 } }, h(FilterDropdown, { label:"Language", options:SUGGESTED_LANGUAGES, selected:languageFilters, onToggle:(l)=>toggleFilter(languageFilters, setLanguageFilters, l), isOpen: openFilterPanel==="language", onToggleOpen:()=>setOpenFilterPanel(p=>p==="language"?null:"language"), tone:"plum" })),
+      h("div", { style:{ flex:"1 1 45%", minWidth:130 } }, h(FilterDropdown, { label:"Offers / looking for", options:ROLE_OPTIONS, selected:roleFilters, onToggle:(r)=>toggleFilter(roleFilters, setRoleFilters, r), isOpen: openFilterPanel==="role", onToggleOpen:()=>setOpenFilterPanel(p=>p==="role"?null:"role"), tone:"coral" })),
+      h("div", { style:{ flex:"1 1 45%", minWidth:130 } }, h(LocationFilterPicker, { selected:locationFilters, onToggle:(c)=>toggleFilter(locationFilters, setLocationFilters, c), onClear:()=>setLocationFilters([]), popularOptions:LOCATION_OPTIONS.filter(x=>x!=="Anywhere"), allOptions:COUNTRIES.filter(x=>x!=="Anywhere") }))
+    ),
+
+    h("div", { style:{ display:"flex", background:"#F4F1F8", borderRadius:14, padding:4, marginBottom:12 } },
+      h("button", { onClick:()=>setViewMode("map"), style:{ flex:1, padding:"8px 0", borderRadius:10, border:"none", background: viewMode==="map" ? CARD : "transparent", color: viewMode==="map" ? PLUM : MUTED, fontWeight: viewMode==="map" ? 700 : 500, fontSize:12.5, boxShadow: viewMode==="map" ? SHADOW : "none" } }, "Mappa"),
+      h("button", { onClick:()=>setViewMode("list"), style:{ flex:1, padding:"8px 0", borderRadius:10, border:"none", background: viewMode==="list" ? CARD : "transparent", color: viewMode==="list" ? PLUM : MUTED, fontWeight: viewMode==="list" ? 700 : 500, fontSize:12.5, boxShadow: viewMode==="list" ? SHADOW : "none" } }, "List")
+    ),
+
+    h("p", { style:{ fontSize:12.5, color:MUTED, margin:"0 0 12px" } }, profiles.length + (profiles.length===1?" profile":" profiles") + (viewMode==="map" ? " on the map \u00b7 tap a dot to see who's there." : " found")),
+
+    viewMode==="map" && h("div", { ref:containerRef, style:{ width:"100%", height:420, borderRadius:16, overflow:"hidden", boxShadow:SHADOW } }),
+    viewMode==="list" && h("div", null,
+      profiles.length===0 && h("p", { style:{ fontSize:14, color:MUTED, textAlign:"center", padding:"30px 0" } }, "No profile matches these filters."),
+      profiles.slice(0, LIST_CAP).map(p => h(ResultRow, { key:p.id, profile:p, onLike:(pr)=>setLikedIds(ids=>ids.includes(pr.id)?ids:[...ids,pr.id]), onView:setViewingProfile, liked: likedIds.includes(p.id), me })),
+      profiles.length > LIST_CAP && h("p", { style:{ fontSize:12, color:MUTED, textAlign:"center", padding:"10px 0" } }, "Showing the first " + LIST_CAP + " di " + profiles.length + ". Add a filter to narrow the search.")
+    ),
+    viewingProfile && h(ProfileDetail, { profile:viewingProfile, onClose:()=>setViewingProfile(null), allowActions:false, liveUpdates, me })
+  );
+}
+
+function SettingsScreen({ notificationsEnabled, onToggleNotif, blockedIds, onUnblock, passedIds, onResetPassed, onLogout, onDeleteAccount, onBack }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const blockedProfiles = blockedIds.map(id => ALL_KNOWN_PROFILES.find(p => p.id === id)).filter(Boolean);
+  const passedProfiles = passedIds.map(id => ALL_KNOWN_PROFILES.find(p => p.id === id)).filter(Boolean);
+
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("div", { style:{ marginBottom:20 } },
+      h("div", { style:{ marginBottom:10 } }, h(BackButton, { onClick:onBack, label:"Back" })),
+      h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:0 } }, "Settings")
+    ),
+
+    h("div", { style:{ background:CARD, borderRadius:16, padding:14, marginBottom:16, boxShadow:SHADOW, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 } },
+      h("div", null,
+        h("p", { style:{ margin:"0 0 2px", fontSize:13.5, fontWeight:700, color:INK } }, "Notifications"),
+        h("p", { style:{ margin:0, fontSize:11.5, color:MUTED } }, "Notify me about new matches and messages")
+      ),
+      h(Toggle, { on:notificationsEnabled, onClick:onToggleNotif })
+    ),
+
+    h("div", { style:{ background:CARD, borderRadius:16, padding:14, marginBottom:16, boxShadow:SHADOW } },
+      h("p", { style:{ margin:"0 0 10px", fontSize:13.5, fontWeight:700, color:INK } }, "Blocked users" + (blockedProfiles.length ? " (" + blockedProfiles.length + ")" : "")),
+      blockedProfiles.length === 0 && h("p", { style:{ margin:0, fontSize:12.5, color:MUTED } }, "No blocked users."),
+      blockedProfiles.map(p => h("div", { key:p.id, style:{ display:"flex", alignItems:"center", gap:10, padding:"6px 0" } },
+        h(Avatar, { photo:p.photo, initials:p.initials, size:34 }),
+        h("p", { style:{ flex:1, margin:0, fontSize:13, color:INK } }, p.name + " " + (p.surname||"")),
+        h("button", { onClick:()=>onUnblock(p.id), style:{ border:`1.5px solid ${BORDER}`, background:CARD, borderRadius:8, padding:"5px 10px", fontSize:11.5, color:PLUM, fontWeight:700 } }, "Unblock")
+      ))
+    ),
+
+    h("div", { style:{ background:CARD, borderRadius:16, padding:14, marginBottom:16, boxShadow:SHADOW } },
+      h("div", { style:{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: passedProfiles.length ? 10 : 0 } },
+        h("p", { style:{ margin:0, fontSize:13.5, fontWeight:700, color:INK } }, "Passed profiles"),
+        passedProfiles.length > 0 && h("button", { onClick:onResetPassed, style:{ border:"none", background:"none", fontSize:11.5, color:PLUM, fontWeight:700 } }, "Restore all")
+      ),
+      passedProfiles.length === 0 && h("p", { style:{ margin:0, fontSize:12.5, color:MUTED } }, "No profiles passed with a left swipe."),
+      passedProfiles.length > 0 && h("div", { style:{ display:"flex", flexWrap:"wrap", gap:6 } }, passedProfiles.map(p => h(Avatar, { key:p.id, photo:p.photo, initials:p.initials, size:34 })))
+    ),
+
+    h("button", { onClick:onLogout, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:PLUM, boxShadow:SHADOW, marginBottom:12 } }, "Log out"),
+
+    !confirmDelete
+      ? h("button", { onClick:()=>setConfirmDelete(true), style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:"none", fontSize:13, fontWeight:600, color:CORAL } }, "Delete profile")
+      : h("div", { style:{ background:"#FFF3EF", border:`1px solid ${CORAL_BG}`, borderRadius:12, padding:"10px 12px" } },
+          h("p", { style:{ fontSize:12.5, color:INK, margin:"0 0 8px", lineHeight:1.5 } }, "Delete your profile? All data (matches, chats, photos) will be lost forever."),
+          h("div", { style:{ display:"flex", gap:8 } },
+            h("button", { onClick:()=>setConfirmDelete(false), style:{ flex:1, padding:"6px 0", borderRadius:8, border:`1px solid ${BORDER}`, background:CARD, fontSize:12, color:MUTED, fontWeight:600 } }, "Cancel"),
+            h("button", { onClick:onDeleteAccount, style:{ flex:1, padding:"6px 0", borderRadius:8, border:"none", background:CORAL, color:"#fff", fontSize:12, fontWeight:700 } }, "Delete")
+          )
+        )
+  );
+}
+
+function IconSearch({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2.2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("circle", { cx:11, cy:11, r:7 }),
+    h("line", { x1:21, y1:21, x2:16.65, y2:16.65 })
+  );
+}
+
+function IconMap({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("polygon", { points:"1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" }),
+    h("line", { x1:8, y1:2, x2:8, y2:18 }),
+    h("line", { x1:16, y1:6, x2:16, y2:22 })
+  );
+}
+
+function IconStar({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("polygon", { points:"12 2 14.9 8.9 22 9.5 16.6 14.2 18.2 21.2 12 17.4 5.8 21.2 7.4 14.2 2 9.5 9.1 8.9 12 2" })
+  );
+}
+
+function IconMessageCircle({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("path", { d:"M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" })
+  );
+}
+
+function IconUser({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("path", { d:"M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" }),
+    h("circle", { cx:12, cy:7, r:4 })
+  );
+}
+
+function IconBell({ size, color }) {
+  const s = size || 20;
+  return h("svg", { width:s, height:s, viewBox:"0 0 24 24", fill:"none", stroke: color || "currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round" },
+    h("path", { d:"M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" }),
+    h("path", { d:"M13.73 21a2 2 0 0 1-3.46 0" })
+  );
+}
+
+function ProfileViews({ views, unlocked, onUnlock, onBack, me, liveUpdates }) {
+  const [viewingProfile, setViewingProfile] = useState(null);
+  return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
+    h("div", { style:{ marginBottom:16 } },
+      h("div", { style:{ marginBottom:10 } }, h(BackButton, { onClick:onBack, label:"Back" })),
+      h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:0 } }, "Who viewed your profile")
+    ),
+    h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 16px" } }, views.length + " " + (views.length===1?"person has":"people have") + " viewed your profile recently."),
+
+    views.map((v, i) => h("div", {
+      key:v.id + "-" + i,
+      onClick: unlocked ? ()=>setViewingProfile(v) : undefined,
+      style:{ background:CARD, borderRadius:16, padding:"10px 12px", marginBottom:8, display:"flex", alignItems:"center", gap:12, boxShadow:SHADOW, cursor: unlocked ? "pointer" : "default" }
+    },
+      h("div", { style:{ filter: unlocked ? "none" : "blur(6px)", transition:"filter 0.25s" } }, h(Avatar, { photo:v.photo, initials:v.initials, size:44 })),
+      h("div", { style:{ flex:1 } },
+        h("p", { style:{ margin:"0 0 2px", fontSize:13.5, fontWeight:700, color:INK, filter: unlocked ? "none" : "blur(4px)", transition:"filter 0.25s" } }, unlocked ? (v.name + " " + (v.surname||"")) : "Private user"),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, "Viewed your profile \u00b7 " + v.viewedAgo)
+      )
+    )),
+
+    !unlocked && h("div", { style:{ background:"linear-gradient(135deg, #FFF1E6 0%, #F4EEFF 100%)", borderRadius:16, padding:16, textAlign:"center", marginTop:8 } },
+      h("p", { style:{ fontSize:13.5, fontWeight:700, color:INK, margin:"0 0 4px" } }, "Discover who they are"),
+      h("p", { style:{ fontSize:12, color:MUTED, margin:"0 0 12px", lineHeight:1.5 } }, "Unlock the names and profiles of people who viewed you with Twinventure Premium."),
+      h("button", { onClick:onUnlock, style:{ padding:"10px 20px", borderRadius:12, border:"none", background:GRADIENT, color:"#fff", fontSize:13, fontWeight:700 } }, "Unlock (demo)")
+    ),
+    viewingProfile && h(ProfileDetail, { profile:viewingProfile, onClose:()=>setViewingProfile(null), allowActions:false, liveUpdates, me })
+  );
+}
+
+function ToastBanner({ topOffset, onClick, onDismiss, children }) {
+  const [offsetY, setOffsetY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [hasDragged, setHasDragged] = useState(false);
+  const startY = useRef(0);
+
+  const getY = (e) => (e.touches ? e.touches[0].clientY : e.clientY);
+  const onDown = (e) => { setDragging(true); setHasDragged(false); startY.current = getY(e); };
+  const onMove = (e) => {
+    if (!dragging) return;
+    const dy = getY(e) - startY.current;
+    if (dy < 0) { if (Math.abs(dy) > 6) setHasDragged(true); setOffsetY(dy); }
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    setDragging(false);
+    if (offsetY < -40) { onDismiss(); return; }
+    setOffsetY(0);
+    if (!hasDragged) onClick();
+  };
+
+  return h("div", {
+    onMouseDown:onDown, onMouseMove:onMove, onMouseUp:onUp, onMouseLeave:onUp,
+    onTouchStart:onDown, onTouchMove:onMove, onTouchEnd:onUp,
+    style:{
+      position:"fixed", top:topOffset, left:"50%",
+      transform:`translateX(-50%) translateY(${offsetY}px)`,
+      opacity: Math.max(0, 1 + offsetY / 60),
+      width:"calc(100% - 32px)", maxWidth:360, background:CARD, borderRadius:16,
+      boxShadow:"0 10px 28px rgba(42,33,64,0.25)", padding:"12px 14px",
+      display:"flex", alignItems:"center", gap:10, zIndex:70, cursor:"pointer",
+      touchAction:"none", userSelect:"none",
+      transition: dragging ? "none" : "transform 0.2s ease, opacity 0.2s ease"
+    }
+  }, children);
+}
+
+function WelcomeScreen({ onContinue, t }) {
+  const FEATURES = [
+    { title:t("feature1Title"), text:t("feature1Text") },
+    { title:t("feature2Title"), text:t("feature2Text") },
+    { title:t("feature3Title"), text:t("feature3Text") },
+    { title:t("feature4Title"), text:t("feature4Text") },
+  ];
+  return h("div", { style:{ maxWidth:380, margin:"20px auto 0" } },
+    h("div", { style:{ display:"flex", justifyContent:"center", marginBottom:22 } }, h(Logo, { size:44 })),
+    h("p", { style:{ fontSize:23, fontWeight:800, color:INK, textAlign:"center", margin:"0 0 8px", lineHeight:1.3 } }, t("welcomeTitle")),
+    h("p", { style:{ fontSize:14, color:MUTED, textAlign:"center", margin:"0 0 26px", lineHeight:1.6 } }, t("welcomeDesc")),
+    h("div", { style:{ display:"flex", flexDirection:"column", gap:14, marginBottom:28 } }, FEATURES.map((f, i) => h("div", { key:i, style:{ background:CARD, borderRadius:16, padding:14, boxShadow:SHADOW } },
+      h("p", { style:{ fontSize:13.5, fontWeight:700, color:INK, margin:"0 0 4px" } }, f.title),
+      h("p", { style:{ fontSize:12.5, color:MUTED, margin:0, lineHeight:1.55 } }, f.text)
+    ))),
+    h("button", { onClick:onContinue, style:{ width:"100%", padding:14, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:15, fontWeight:700, boxShadow:"0 8px 20px rgba(255,107,74,0.35)" } }, t("start"))
+  );
+}
+
+function LanguageScreen({ onSelect }) {
+  return h("div", { style:{ maxWidth:360, margin:"60px auto 0", textAlign:"center" } },
+    h("div", { style:{ display:"flex", justifyContent:"center", marginBottom:22 } }, h(Logo, { size:40 })),
+    h("p", { style:{ fontSize:18, fontWeight:800, color:INK, margin:"0 0 20px" } }, "Scegli la lingua dell'app / Choose your language"),
+    h("div", { style:{ display:"flex", flexDirection:"column", gap:10 } }, LANG_OPTIONS.map(l => h("button", {
+      key:l.code, onClick:()=>onSelect(l.code),
+      style:{ padding:14, borderRadius:14, border:`1.5px solid ${BORDER}`, background:CARD, fontSize:15, fontWeight:600, color:INK, boxShadow:SHADOW }
+    }, l.label)))
+  );
+}
+
+function App() {
+  const [dataVersion, setDataVersion] = useState(0);
+  const [syncStatus, setSyncStatus] = useState(twinventureDb ? "loading" : "offline");
+
+  useEffect(() => {
+    if (!twinventureDb) return;
+    twinventureDb.from("profiles").select("*").then(({ data, error }) => {
+      if (error) { console.error("Twinventure: error loading shared profiles", error); setSyncStatus("error"); return; }
+      const existingIds = new Set(DEMO_PROFILES.map(p => p.id));
+      (data || []).forEach(row => {
+        if (existingIds.has(row.id)) return;
+        DEMO_PROFILES.push({
+          id: row.id, name: row.name, surname: row.surname, age: row.age, city: row.city,
+          country: row.country, targetCountry: row.target_country, dialCode: row.dial_code,
+          phone: row.phone, phoneVerified: row.phone_verified, gender: row.gender,
+          photos: row.photos || [], photo: row.photo, background: row.background,
+          initials: initialsOf(row.name, row.surname),
+          tags: row.tags || [], offers: row.offers || [], seeks: row.seeks || [],
+          languages: row.languages || [], mindset: [], bio: row.bio, docVerified: row.doc_verified
+        });
+        if (CITY_COORDS[row.city] === undefined && CITY_COORDS[row.city] !== 0) { /* citta senza coordinate: non comparira sulla mappa, restera visibile altrove */ }
+      });
+      setSyncStatus("ready");
+      setDataVersion(v => v + 1);
+    });
+  }, []);
+
+  const saveProfileToCloud = (p) => {
+    if (!twinventureDb) return;
+    twinventureDb.from("profiles").upsert([{
+      id: p.id, name: p.name, surname: p.surname, age: p.age, city: p.city,
+      country: p.country, target_country: p.targetCountry, dial_code: p.dialCode,
+      phone: p.phone, phone_verified: p.phoneVerified, gender: p.gender,
+      photos: p.photos, photo: p.photo, background: p.background,
+      tags: p.tags, offers: p.offers, seeks: p.seeks, languages: p.languages,
+      bio: p.bio, doc_verified: p.docVerified
+    }]).then(({ error }) => { if (error) console.error("Twinventure: error saving shared profile", error); });
+  };
+
+  const getMyAuthId = async () => {
+    if (!twinventureDb) return null;
+    try {
+      const { data } = await twinventureDb.auth.getUser();
+      return data && data.user ? data.user.id : null;
+    } catch (e) { return null; }
+  };
+  const [me, setMe] = useState(() => loadLS("tv_me", null));
+  const [matches, setMatches] = useState(() => loadLS("tv_matches", []));
+  const [receivedLikes, setReceivedLikes] = useState(() => loadLS("tv_likes", RECEIVED_LIKES_SEED));
+  const [sentLikes, setSentLikes] = useState(() => loadLS("tv_sentlikes", []));
+  const [blockedIds, setBlockedIds] = useState(() => loadLS("tv_blocked", []));
+  const [passedIds, setPassedIds] = useState(() => loadLS("tv_passed", []));
+  const [notificationsEnabled, setNotificationsEnabled] = useState(() => loadLS("tv_notif", true));
+  const [authChecked, setAuthChecked] = useState(!twinventureDb);
+  const [appLang, setAppLang] = useState("en");
+  const t = (key) => (I18N.en && I18N.en[key]) || key;
+  const [screen, setScreen] = useState(() => {
+    if (loadLS("tv_me", null)) return "swipe";
+    return loadLS("tv_seenWelcome", false) ? "auth" : "welcome";
+  });
+  const [activeChat, setActiveChat] = useState(null);
+  const [matchCelebration, setMatchCelebration] = useState(null);
+
+  useEffect(() => {
+    if (!twinventureDb) { setAuthChecked(true); return; }
+    const goPastAuth = () => setScreen(prev => (prev === "auth" || prev === "welcome") ? (loadLS("tv_me", null) ? "swipe" : "onboarding") : prev);
+    twinventureDb.auth.getSession().then(({ data }) => {
+      if (data && data.session) goPastAuth();
+      setAuthChecked(true);
+    }).catch(() => setAuthChecked(true));
+    const { data: authListener } = twinventureDb.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) goPastAuth();
+    });
+    return () => { if (authListener && authListener.subscription) authListener.subscription.unsubscribe(); };
+  }, []);
+  const [toast, setToast] = useState(null);
+  const [unreadCounts, setUnreadCounts] = useState({});
+  const [chatMessages, setChatMessages] = useState(() => loadLS("tv_chatmsgs", {}));
+  const activeChatIdRef = useRef(null);
+  useEffect(() => { activeChatIdRef.current = (screen === "chat" && activeChat) ? activeChat.id : null; }, [screen, activeChat]);
+  useEffect(() => { if (screen === "swipe" && reopenSearchOnSwipe) setReopenSearchOnSwipe(false); }, [screen]);
+  const [liveUpdates, setLiveUpdates] = useState({});
+  const [premiumUnlocked, setPremiumUnlocked] = useState(true);
+  const [mapProfiles, setMapProfiles] = useState(null);
+  const [reopenSearchOnSwipe, setReopenSearchOnSwipe] = useState(false);
+  const [industryFilters, setIndustryFilters] = useState([]);
+  const [languageFilters, setLanguageFilters] = useState([]);
+  const [roleFilters, setRoleFilters] = useState([]);
+  const [locationFilters, setLocationFilters] = useState([]);
+  const [recentSearches, setRecentSearches] = useState([]);
+  const [profileViews, setProfileViews] = useState(PROFILE_VIEWS_SEED);
+  const [viewToast, setViewToast] = useState(null);
+  const [likeToast, setLikeToast] = useState(null);
+  const [unseenViews, setUnseenViews] = useState(0);
+
+  useEffect(() => { saveLS("tv_me", me); }, [me]);
+  useEffect(() => { saveLS("tv_matches", matches); }, [matches]);
+  useEffect(() => { saveLS("tv_likes", receivedLikes); }, [receivedLikes]);
+  useEffect(() => { saveLS("tv_sentlikes", sentLikes); }, [sentLikes]);
+  useEffect(() => { saveLS("tv_blocked", blockedIds); }, [blockedIds]);
+  useEffect(() => { saveLS("tv_passed", passedIds); }, [passedIds]);
+  useEffect(() => { saveLS("tv_notif", notificationsEnabled); }, [notificationsEnabled]);
+  useEffect(() => { saveLS("tv_chatmsgs", chatMessages); }, [chatMessages]);
+
+  const appendMessage = (matchId, msg) => setChatMessages(prev => ({ ...prev, [matchId]: [...(prev[matchId] || []), msg] }));
+  const ensureSeeded = (matchId, profile) => setChatMessages(prev => prev[matchId] ? prev : { ...prev, [matchId]: [{ from:"them", text:"Hi! I saw you're also starting from scratch in " + (profile.tags && profile.tags[0]) + ". Where would you like to expand exactly?" }] });
+  const sendMessage = (matchId, text) => {
+    appendMessage(matchId, { from:"me", text });
+    setTimeout(() => appendMessage(matchId, { from:"them", text:"Interesting, should we hop on a call this week to discuss it?" }), 1000);
+  };
+
+  useEffect(() => {
+    const LIVE_UPDATE_MESSAGES = ["Updated their bio", "Added a new photo", "Ha modificato cosa cerca in un partner", "Ha aggiornato i settori", "Added a new spoken language", "Updated their city"];
+    const timer = setInterval(() => {
+      setLiveUpdates(prev => {
+        const next = { ...prev };
+        [3, 5].forEach(id => { // Sven and Wei, per la prova
+          const msg = LIVE_UPDATE_MESSAGES[Math.floor(Math.random() * LIVE_UPDATE_MESSAGES.length)];
+          next[id] = [{ text:msg, time:"Adesso" }, ...(next[id] || [])].slice(0, 5);
+        });
+        return next;
+      });
+    }, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!notificationsEnabled) return;
+      const viewer = ALL_KNOWN_PROFILES[Math.floor(Math.random() * ALL_KNOWN_PROFILES.length)];
+      const entry = { ...viewer, viewedAgo:"Adesso" };
+      setProfileViews(prev => [entry, ...prev].slice(0, 10));
+      setUnseenViews(v => v + 1);
+      setViewToast(entry);
+      setTimeout(() => setViewToast(t => (t && t.id === entry.id ? null : t)), 5000);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [notificationsEnabled]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!notificationsEnabled) return;
+      if (sentLikes.length > 0 && Math.random() < 0.6) {
+        const reciprocatorId = sentLikes[Math.floor(Math.random() * sentLikes.length)];
+        const reciprocator = DEMO_PROFILES.find(p => p.id === reciprocatorId);
+        if (reciprocator) {
+          setSentLikes(prev => prev.filter(x => x !== reciprocatorId));
+          triggerMatch(reciprocator);
+          return;
+        }
+      }
+      const pool = ALL_KNOWN_PROFILES.filter(p => !receivedLikes.some(r => r.id === p.id) && !matches.some(m => m.id === p.id) && !blockedIds.includes(p.id) && !sentLikes.includes(p.id));
+      if (pool.length === 0) return;
+      const liker = pool[Math.floor(Math.random() * pool.length)];
+      setReceivedLikes(prev => [liker, ...prev]);
+      setLikeToast(liker);
+      setTimeout(() => setLikeToast(t => (t && t.id === liker.id ? null : t)), 5000);
+    }, 40000);
+    return () => clearInterval(timer);
+  }, [notificationsEnabled, receivedLikes, matches, blockedIds, sentLikes]);
+
+  useEffect(() => {
+    const DEMO_MESSAGES = [
+      "Hi! Have you seen my idea? Let me know what you think.",
+      "I talked to a supplier today, interesting news.",
+      "Would you like to hop on a call this week?",
+      "I updated my profile, take a look.",
+      "I think we could really build something together.",
+    ];
+    const timer = setInterval(() => {
+      if (!notificationsEnabled || matches.length === 0) return;
+      const m = matches[Math.floor(Math.random() * matches.length)];
+      const text = DEMO_MESSAGES[Math.floor(Math.random() * DEMO_MESSAGES.length)];
+      appendMessage(m.id, { from:"them", text });
+      if (activeChatIdRef.current !== m.id) {
+        setUnreadCounts(prev => ({ ...prev, [m.id]: (prev[m.id] || 0) + 1 }));
+        setToast({ match:m, text });
+        setTimeout(() => setToast(t => (t && t.match.id === m.id ? null : t)), 5000);
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [notificationsEnabled, matches]);
+
+  const addMatch = (p) => setMatches(prev => prev.find(x=>x.id===p.id) ? prev : [...prev, p]);
+  const triggerMatch = (p) => {
+    const isNew = !matches.find(x => x.id === p.id);
+    addMatch(p);
+    if (isNew) setMatchCelebration({ profile:p, phrase: MATCH_PHRASES[Math.floor(Math.random()*MATCH_PHRASES.length)] });
+  };
+  const sendLike = (p) => {
+    const alreadyLikedMe = receivedLikes.some(x => x.id === p.id);
+    if (alreadyLikedMe) {
+      triggerMatch(p);
+      setReceivedLikes(prev => prev.filter(x => x.id !== p.id));
+      return;
+    }
+    setSentLikes(prev => prev.includes(p.id) ? prev : [...prev, p.id]);
+    if (Math.random() < 0.5) {
+      triggerMatch(p);
+      setSentLikes(prev => prev.filter(id => id !== p.id));
+    }
+  };
+  const likeBack = (p) => { triggerMatch(p); setReceivedLikes(prev => prev.filter(x => x.id !== p.id)); setSentLikes(prev => prev.filter(x => x !== p.id)); };
+  const passReceived = (id) => setReceivedLikes(prev => prev.filter(x => x.id !== id));
+  const undoMatch = (id) => { setMatches(prev => prev.filter(x => x.id !== id)); setSentLikes(prev => prev.filter(x => x !== id)); };
+  const passProfile = (id) => setPassedIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  const undoPass = (id) => setPassedIds(prev => prev.filter(x => x !== id));
+  const resetPassed = () => setPassedIds([]);
+  const deleteChat = (id) => setMatches(prev => prev.filter(m => m.id !== id));
+  const blockUser = (id) => { setMatches(prev => prev.filter(m => m.id !== id)); setReceivedLikes(prev => prev.filter(x => x.id !== id)); setBlockedIds(prev => prev.includes(id) ? prev : [...prev, id]); };
+  const unblockUser = (id) => setBlockedIds(prev => prev.filter(x => x !== id));
+  const reportUser = (id) => { blockUser(id); };
+  const logout = () => { if (twinventureDb) twinventureDb.auth.signOut(); setScreen("auth"); };
+  const resetDemo = () => {
+    localStorage.removeItem("tv_me"); localStorage.removeItem("tv_matches"); localStorage.removeItem("tv_likes"); localStorage.removeItem("tv_blocked"); localStorage.removeItem("tv_notif"); localStorage.removeItem("tv_chatmsgs"); localStorage.removeItem("tv_seenWelcome"); localStorage.removeItem("tv_passed"); localStorage.removeItem("tv_sentlikes");
+    setMe(null); setMatches([]); setReceivedLikes(RECEIVED_LIKES_SEED); setSentLikes([]); setBlockedIds([]); setPassedIds([]); setNotificationsEnabled(true); setChatMessages({}); setScreen("welcome");
+  };
+
+  if (!authChecked) {
+    return h("div", { style:{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" } }, h(Logo, { size:36 }));
+  }
+
+  const showNav = screen !== "auth" && screen !== "welcome" && screen !== "language" && screen !== "onboarding" && screen !== "chat" && screen !== "editprofile" && screen !== "settings";
+
+  return h("div", { style:{ minHeight:"100vh", boxSizing:"border-box", padding: "20px 16px " + (showNav ? (NAV_H + 16) : 20) + "px" } },
+    screen !== "auth" && screen !== "welcome" && screen !== "language" && h("div", { style:{ maxWidth:380, margin:"0 auto 20px", display:"flex", justifyContent:"center", alignItems:"center", position:"relative" } },
+      h("button", { onClick:()=>setScreen("swipe"), style:{ border:"none", background:"none", padding:0, cursor:"pointer" } }, h(Logo, { size:30 })),
+      screen !== "onboarding" && screen !== "editprofile" && h("button", { onClick:()=>{ setScreen("views"); setUnseenViews(0); }, style:{ position:"absolute", right:0, border:"none", background:CARD, borderRadius:"50%", width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:SHADOW } },
+        h(IconBell, { size:17, color:INK }),
+        unseenViews > 0 && h("span", { style:{ position:"absolute", top:-3, right:-3, minWidth:17, height:17, borderRadius:"50%", background:GRADIENT, color:"#fff", fontSize:9.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px", border:"2px solid " + CARD } }, unseenViews)
+      )
+    ),
+    screen==="welcome" && h(WelcomeScreen, { t, onContinue:()=>{ saveLS("tv_seenWelcome", true); setScreen("auth"); } }),
+    screen==="auth" && h(AuthScreen, { t, onSuccess: () => setScreen(me ? "swipe" : "onboarding") }),
+    screen==="onboarding" && h(Onboarding, { onDone: async (p) => {
+      const authId = await getMyAuthId();
+      const withId = { ...p, id: p.id || authId || ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "u-" + Date.now() + "-" + Math.random().toString(36).slice(2)) };
+      setMe(withId);
+      const exists = DEMO_PROFILES.find(x => x.id === withId.id);
+      if (!exists) DEMO_PROFILES.push(withId); else Object.assign(exists, withId);
+      saveProfileToCloud(withId);
+      setDataVersion(v => v + 1);
+      setScreen("swipe");
+    } }),
+    screen==="swipe" && h(SwipeDeck, { onMatch:sendLike, onUndoMatch:undoMatch, onPassProfile:passProfile, onUndoPass:undoPass, onOpenMap:(filtered)=>{ setMapProfiles(filtered); setScreen("map"); }, matchCount:matches.length, blockedIds, passedIds, matchedIds:matches.map(m=>m.id), sentLikes, liveUpdates, me, initialSearchOpen:reopenSearchOnSwipe, industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters, recentSearches, setRecentSearches }),
+    screen==="map" && h(MapScreen, { blockedIds, liveUpdates, me, matchedIds:matches.map(m=>m.id), industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters }),
+    screen==="likes" && h(ReceivedLikes, { likes:receivedLikes, onLikeBack:likeBack, onPass:passReceived }),
+    screen==="views" && h(ProfileViews, { views:profileViews, unlocked:premiumUnlocked, onUnlock:()=>setPremiumUnlocked(true), onBack:()=>setScreen("swipe"), me, liveUpdates }),
+    screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
+    screen==="chat" && activeChat && h(Chat, { match:activeChat, messages: chatMessages[activeChat.id] || [], onSend:(text)=>sendMessage(activeChat.id, text), onBack:()=>setScreen("chatlist"), onDeleteChat:deleteChat, onBlock:blockUser, onReport:reportUser, liveUpdates, me }),
+    screen==="profile" && me && h(ProfileScreen, { me, onEdit:()=>setScreen("editprofile"), onSettings:()=>setScreen("settings") }),
+    screen==="editprofile" && h(Onboarding, { initial: me, title:"Edit profile", ctaLabel:"Save changes", onDone:(p)=>{
+      setMe(p);
+      const exists = DEMO_PROFILES.find(x => x.id === p.id);
+      if (exists) Object.assign(exists, p); else DEMO_PROFILES.push(p);
+      saveProfileToCloud(p);
+      setDataVersion(v => v + 1);
+      setScreen("profile");
+    }, onCancel:()=>setScreen("profile") }),
+    screen==="settings" && h(SettingsScreen, {
+      notificationsEnabled, onToggleNotif:()=>setNotificationsEnabled(v=>!v),
+      blockedIds, onUnblock:unblockUser,
+      passedIds, onResetPassed:resetPassed,
+      onLogout:logout, onDeleteAccount:resetDemo,
+      onBack:()=>setScreen("profile")
+    }),
+    showNav && h(BottomNav, { screen, setScreen, onOpenMap:()=>setScreen("map"), likesCount:receivedLikes.length, unreadMsgCount: Object.values(unreadCounts).reduce((a,b)=>a+b,0), t }),
+    matchCelebration && h(MatchScreen, {
+      me, celebration:matchCelebration,
+      onSend:(text) => {
+        const p = matchCelebration.profile;
+        setChatMessages(prev => ({ ...prev, [p.id]: [{ from:"me", text }] }));
+        setTimeout(() => appendMessage(p.id, { from:"them", text:"Hi! Thanks for the message, I like your idea. Tell me more." }), 1200);
+        setActiveChat(p);
+        setMatchCelebration(null);
+        setScreen("chat");
+      },
+      onSkip:() => setMatchCelebration(null)
+    }),
+    toast && h(ToastBanner, {
+      topOffset:14,
+      onClick:()=>{ setActiveChat(toast.match); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[toast.match.id]; return c; }); setToast(null); },
+      onDismiss:()=>setToast(null)
+    },
+      h(Avatar, { photo:toast.match.photo, initials:toast.match.initials, size:38 }),
+      h("div", { style:{ flex:1, minWidth:0 } },
+        h("p", { style:{ margin:"0 0 1px", fontSize:12.5, fontWeight:800, color:INK } }, toast.match.name + " messaged you"),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" } }, toast.text)
+      )
+    ),
+    viewToast && h(ToastBanner, {
+      topOffset: toast ? 84 : 14,
+      onClick:()=>{ setScreen("views"); setUnseenViews(0); setViewToast(null); },
+      onDismiss:()=>setViewToast(null)
+    },
+      h(Avatar, { photo:viewToast.photo, initials:viewToast.initials, size:38 }),
+      h("div", { style:{ flex:1, minWidth:0 } },
+        h("p", { style:{ margin:"0 0 1px", fontSize:12.5, fontWeight:800, color:INK } }, viewToast.name + " viewed your profile"),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, "Tap to see who's viewing you")
+      )
+    ),
+    likeToast && h(ToastBanner, {
+      topOffset: 14 + (toast ? 70 : 0) + (viewToast ? 70 : 0),
+      onClick:()=>{ setScreen("likes"); setLikeToast(null); },
+      onDismiss:()=>setLikeToast(null)
+    },
+      h(Avatar, { photo:likeToast.photo, initials:likeToast.initials, size:38 }),
+      h("div", { style:{ flex:1, minWidth:0 } },
+        h("p", { style:{ margin:"0 0 1px", fontSize:12.5, fontWeight:800, color:INK } }, likeToast.name + " liked you"),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, "Tap to see who chose you")
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
