@@ -647,41 +647,37 @@ function CountryPicker({ label, value, onChange, options, popularOptions }) {
 function AuthScreen({ onSuccess, t }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
-  const [codeSent, setCodeSent] = useState(false);
-  const [genCode, setGenCode] = useState("");
-  const [enteredCode, setEnteredCode] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const live = !!twinventureDb;
 
   const fieldStyle = { width:"100%", padding:12, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, marginBottom:14, boxSizing:"border-box" };
 
-  const sendCode = async () => {
+  const submit = async () => {
     if (!email.trim() || !email.includes("@")) { setError("Enter a valid email."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
     setError("");
     setSending(true);
     if (live) {
-      const redirectTo = window.location.origin + window.location.pathname;
-      const { error: err } = await twinventureDb.auth.signInWithOtp({ email: email.trim(), options:{ shouldCreateUser:true, emailRedirectTo:redirectTo } });
-      setSending(false);
-      if (err) { setError("I couldn't send the email: " + err.message); return; }
-      setCodeSent(true);
+      if (mode === "register") {
+        const { error: err } = await twinventureDb.auth.signUp({ email: email.trim(), password });
+        setSending(false);
+        if (err) { setError(err.message); return; }
+        onSuccess();
+      } else {
+        const { error: err } = await twinventureDb.auth.signInWithPassword({ email: email.trim(), password });
+        setSending(false);
+        if (err) { setError("Wrong email or password."); return; }
+        onSuccess();
+      }
     } else {
-      const code = String(Math.floor(100000 + Math.random() * 900000));
-      setGenCode(code);
-      setCodeSent(true);
-      setEnteredCode("");
       setSending(false);
+      onSuccess();
     }
   };
 
-  const submit = async () => {
-    if (enteredCode.trim() !== genCode) { setError("Wrong code, try again."); return; }
-    setError("");
-    onSuccess();
-  };
-
-  const switchMode = (m) => { setMode(m); setCodeSent(false); setEnteredCode(""); setError(""); };
+  const switchMode = (m) => { setMode(m); setError(""); };
 
   return h("div", { style:{ maxWidth:360, margin:"40px auto 0" } },
     h("div", { style:{ display:"flex", justifyContent:"center", marginBottom:28 } }, h(Logo, { size:36 })),
@@ -690,29 +686,14 @@ function AuthScreen({ onSuccess, t }) {
       h("button", { onClick:()=>switchMode("register"), style:{ flex:1, padding:"9px 0", borderRadius:10, border:"none", background: mode==="register" ? CARD : "transparent", color: mode==="register" ? PLUM : MUTED, fontWeight:700, fontSize:13.5, boxShadow: mode==="register" ? SHADOW : "none" } }, t("register"))
     ),
     h("p", { style:{ fontSize:20, fontWeight:800, color:INK, margin:"0 0 4px" } }, mode === "login" ? t("welcomeBack") : t("createAccount")),
-    h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 20px" } }, live ? "Log in with a link sent to your email, no password to remember." : t("authDesc")),
+    h("p", { style:{ fontSize:13, color:MUTED, margin:"0 0 20px" } }, mode === "login" ? "Log in with your email and password." : "Create an account with an email and password, at least 6 characters."),
     h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, t("email")),
-    h("input", { type:"email", value:email, onChange:e=>{ setEmail(e.target.value); setCodeSent(false); }, placeholder:"name@example.com", style:fieldStyle }),
-
-    !codeSent
-      ? h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, boxShadow:"0 6px 16px rgba(255,107,74,0.35)", opacity: sending?0.7:1 } }, sending ? "Sending..." : (live ? "Send sign-in link" : t("sendCode")))
-      : live
-        ? h("div", null,
-            h("div", { style:{ background:PLUM_BG, borderRadius:14, padding:14, marginBottom:8 } },
-              h("p", { style:{ fontSize:13, color:PLUM, fontWeight:700, margin:"0 0 4px" } }, "Check your email"),
-              h("p", { style:{ fontSize:12.5, color:INK, margin:0, lineHeight:1.5 } }, "We sent a sign-in link to " + email + ". Open it on this device and this page will log you in automatically. Check your spam folder too.")
-            ),
-            h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", border:"none", background:"none", fontSize:12, color:MUTED, textDecoration:"underline" } }, "Resend link")
-          )
-        : h("div", null,
-            h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 8px", fontStyle:"italic" } }, "Demo: the email code is " + genCode),
-            h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, "6-digit code"),
-            h("input", { value:enteredCode, onChange:e=>setEnteredCode(e.target.value), placeholder:"123456", style:fieldStyle }),
-            h("button", { onClick:submit, disabled:sending, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, boxShadow:"0 6px 16px rgba(255,107,74,0.35)", marginBottom:8, opacity: sending?0.7:1 } }, mode === "login" ? t("login") : t("register")),
-            h("button", { onClick:sendCode, disabled:sending, style:{ width:"100%", border:"none", background:"none", fontSize:12, color:MUTED, textDecoration:"underline" } }, "Resend code")
-          ),
+    h("input", { type:"email", value:email, onChange:e=>setEmail(e.target.value), placeholder:"name@example.com", style:fieldStyle }),
+    h("label", { style:{ fontSize:13, color:MUTED, display:"block", marginBottom:4, fontWeight:600 } }, "Password"),
+    h("input", { type:"password", value:password, onChange:e=>setPassword(e.target.value), placeholder:"\u2022\u2022\u2022\u2022\u2022\u2022", style:fieldStyle, onKeyDown:e=>{ if (e.key==="Enter") submit(); } }),
+    h("button", { onClick:submit, disabled:sending, style:{ width:"100%", padding:13, borderRadius:14, border:"none", background:GRADIENT, color:"#fff", fontSize:14.5, fontWeight:700, boxShadow:"0 6px 16px rgba(255,107,74,0.35)", opacity: sending?0.7:1 } }, sending ? "Please wait..." : (mode === "login" ? t("login") : t("register"))),
     error && h("p", { style:{ fontSize:12.5, color:CORAL, fontWeight:600, margin:"10px 0 0" } }, error),
-    h("p", { style:{ fontSize:11, color:MUTED, textAlign:"center", marginTop:14 } }, live ? "The link really arrives via email." : "Supabase is unreachable: demo mode, any email works.")
+    !live && h("p", { style:{ fontSize:11, color:MUTED, textAlign:"center", marginTop:14 } }, "Supabase is unreachable: demo mode, any email/password works.")
   );
 }
 
