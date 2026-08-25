@@ -810,22 +810,20 @@ function Onboarding({ initial, onDone, onCancel, title, ctaLabel }) {
 
   const submit = () => {
     const missing = [];
-    if (!photos.length) missing.push("almeno una foto");
-    if (!name.trim()) missing.push("il nome");
-    if (!surname.trim()) missing.push("il cognome");
-    if (!age) missing.push("l'eta");
-    if (!city.trim()) missing.push("la citta");
-    if (!phone.trim()) missing.push("il telefono");
-    if (!phoneVerified) missing.push("phone number verification (send and confirm the code)");
-    if (!gender) missing.push("il sesso");
-    if (tags.length === 0) missing.push("almeno un settore");
-    if (offers.length === 0) missing.push("almeno una cosa che offri");
-    if (seeks.length === 0) missing.push("almeno una cosa che cerchi");
-    if (!bio.trim()) missing.push("la tua idea in poche righe");
-    if (languages.length === 0) missing.push("almeno una lingua parlata");
+    if (!photos.length) missing.push("at least one photo");
+    if (!name.trim()) missing.push("your first name");
+    if (!surname.trim()) missing.push("your last name");
+    if (!age) missing.push("your age");
+    if (!city.trim()) missing.push("your city");
+    if (!gender) missing.push("your gender");
+    if (tags.length === 0) missing.push("at least one industry");
+    if (offers.length === 0) missing.push("at least one thing you offer");
+    if (seeks.length === 0) missing.push("at least one thing you're looking for");
+    if (!bio.trim()) missing.push("your idea in a few lines");
+    if (languages.length === 0) missing.push("at least one spoken language");
 
     if (missing.length > 0) {
-      setError("Manca ancora: " + missing.join(", ") + ".");
+      setError("Still missing: " + missing.join(", ") + ".");
       return;
     }
     setError("");
@@ -886,7 +884,7 @@ function Onboarding({ initial, onDone, onCancel, title, ctaLabel }) {
       )
     ),
     h("div", { style:{ marginBottom:14 } },
-      h("label", { style:labelStyle }, "Telefono"),
+      h("label", { style:labelStyle }, "Phone (optional)"),
       h("div", { style:{ display:"flex", gap:8, marginBottom:8 } },
         h(DialCodePicker, { value:dialCode, onChange:onDialChange }),
         h("input", { value:phone, onChange:e=>onPhoneChange(e.target.value), placeholder:"555 1234567", style:{ flex:1, padding:11, borderRadius:12, border:`1.5px solid ${BORDER}`, fontSize:14, boxSizing:"border-box" } })
@@ -895,12 +893,12 @@ function Onboarding({ initial, onDone, onCancel, title, ctaLabel }) {
         ? h("div", { style:{ display:"flex", alignItems:"center", gap:6, fontSize:12.5, color:"#1E9E64", fontWeight:700 } }, "\u2713 Number verified")
         : h("div", null,
             !codeSent
-              ? h("button", { type:"button", onClick:sendCode, disabled: !phone.trim(), style:{ padding:"8px 14px", borderRadius:10, border:`1.5px solid ${PLUM}`, background:CARD, color:PLUM, fontSize:12.5, fontWeight:700, opacity: phone.trim() ? 1 : 0.5 } }, "Send verification code")
+              ? (phone.trim() && h("button", { type:"button", onClick:sendCode, style:{ padding:"8px 14px", borderRadius:10, border:`1.5px solid ${PLUM}`, background:CARD, color:PLUM, fontSize:12.5, fontWeight:700 } }, "Send verification code"))
               : h("div", null,
                   h("p", { style:{ fontSize:11.5, color:MUTED, margin:"0 0 6px", fontStyle:"italic" } }, "Demo: the SMS code is " + genCode),
                   h("div", { style:{ display:"flex", gap:8 } },
-                    h("input", { value:enteredCode, onChange:e=>setEnteredCode(e.target.value), placeholder:"Codice a 6 cifre", style:{ flex:1, padding:9, borderRadius:10, border:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
-                    h("button", { type:"button", onClick:verifyCode, style:{ padding:"0 14px", borderRadius:10, border:"none", background:GRADIENT, color:"#fff", fontSize:12.5, fontWeight:700 } }, "Verifica")
+                    h("input", { value:enteredCode, onChange:e=>setEnteredCode(e.target.value), placeholder:"6-digit code", style:{ flex:1, padding:9, borderRadius:10, border:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
+                    h("button", { type:"button", onClick:verifyCode, style:{ padding:"0 14px", borderRadius:10, border:"none", background:GRADIENT, color:"#fff", fontSize:12.5, fontWeight:700 } }, "Verify")
                   ),
                   codeError && h("p", { style:{ fontSize:11.5, color:CORAL, margin:"6px 0 0", fontWeight:600 } }, codeError),
                   h("button", { type:"button", onClick:sendCode, style:{ marginTop:6, border:"none", background:"none", fontSize:11.5, color:MUTED, textDecoration:"underline", padding:0 } }, "Resend code")
