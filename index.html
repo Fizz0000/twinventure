@@ -1800,7 +1800,8 @@ function App() {
           photos: row.photos || [], photo: row.photo, background: row.background,
           initials: initialsOf(row.name, row.surname),
           tags: row.tags || [], offers: row.offers || [], seeks: row.seeks || [],
-          languages: row.languages || [], mindset: [], bio: row.bio, docVerified: row.doc_verified
+          languages: row.languages || [], mindset: [], bio: row.bio, docVerified: row.doc_verified,
+          isCloud: true
         });
         if (CITY_COORDS[row.city] === undefined && CITY_COORDS[row.city] !== 0) { /* citta senza coordinate: non comparira sulla mappa, restera visibile altrove */ }
       });
@@ -1828,6 +1829,7 @@ function App() {
       return data && data.user ? data.user.id : null;
     } catch (e) { return null; }
   };
+  const [myAuthId, setMyAuthId] = useState(null);
   const [me, setMe] = useState(() => loadLS("tv_me", null));
   const [matches, setMatches] = useState(() => loadLS("tv_matches", []));
   const [receivedLikes, setReceivedLikes] = useState(() => loadLS("tv_likes", RECEIVED_LIKES_SEED));
@@ -1854,9 +1856,12 @@ function App() {
     }).catch(() => setAuthChecked(true));
     const { data: authListener } = twinventureDb.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) goPastAuth();
+      if (session && session.user) setMyAuthId(session.user.id);
+      if (event === "SIGNED_OUT") setMyAuthId(null);
     });
     return () => { if (authListener && authListener.subscription) authListener.subscription.unsubscribe(); };
   }, []);
+  useEffect(() => { if (twinventureDb) getMyAuthId().then(id => { if (id) setMyAuthId(id); }); }, []);
   const [toast, setToast] = useState(null);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [chatMessages, setChatMessages] = useState(() => loadLS("tv_chatmsgs", {}));
@@ -1888,7 +1893,25 @@ function App() {
 
   const appendMessage = (matchId, msg) => setChatMessages(prev => ({ ...prev, [matchId]: [...(prev[matchId] || []), msg] }));
   const ensureSeeded = (matchId, profile) => setChatMessages(prev => prev[matchId] ? prev : { ...prev, [matchId]: [{ from:"them", text:"Hi! I saw you're also starting from scratch in " + (profile.tags && profile.tags[0]) + ". Where would you like to expand exactly?" }] });
+  const pairIds = (a, b) => (a < b ? { user_a:a, user_b:b } : { user_a:b, user_b:a });
+  const loadCloudMessages = (match) => {
+    if (!twinventureDb || !myAuthId || !match.isCloud) return;
+    const { user_a, user_b } = pairIds(myAuthId, match.id);
+    twinventureDb.from("messages").select("*").eq("user_a", user_a).eq("user_b", user_b).order("created_at", { ascending:true }).then(({ data, error }) => {
+      if (error) { console.error("Twinventure: error loading messages", error); return; }
+      setChatMessages(prev => ({ ...prev, [match.id]: (data || []).map(r => ({ from: r.sender_id === myAuthId ? "me" : "them", text:r.body, id:r.id })) }));
+    });
+  };
   const sendMessage = (matchId, text) => {
+    const match = matches.find(m => m.id === matchId);
+    if (match && match.isCloud && myAuthId) {
+      appendMessage(matchId, { from:"me", text });
+      const { user_a, user_b } = pairIds(myAuthId, matchId);
+      twinventureDb.from("messages").insert([{ user_a, user_b, sender_id:myAuthId, body:text }]).then(({ error }) => {
+        if (error) console.error("Twinventure: error sending message", error);
+      });
+      return;
+    }
     appendMessage(matchId, { from:"me", text });
     setTimeout(() => appendMessage(matchId, { from:"them", text:"Interesting, should we hop on a call this week to discuss it?" }), 1000);
   };
@@ -1952,8 +1975,9 @@ function App() {
       "I think we could really build something together.",
     ];
     const timer = setInterval(() => {
-      if (!notificationsEnabled || matches.length === 0) return;
-      const m = matches[Math.floor(Math.random() * matches.length)];
+      const demoMatches = matches.filter(m => !m.isCloud);
+      if (!notificationsEnabled || demoMatches.length === 0) return;
+      const m = demoMatches[Math.floor(Math.random() * demoMatches.length)];
       const text = DEMO_MESSAGES[Math.floor(Math.random() * DEMO_MESSAGES.length)];
       appendMessage(m.id, { from:"them", text });
       if (activeChatIdRef.current !== m.id) {
@@ -1971,7 +1995,90 @@ function App() {
     addMatch(p);
     if (isNew) setMatchCelebration({ profile:p, phrase: MATCH_PHRASES[Math.floor(Math.random()*MATCH_PHRASES.length)] });
   };
+  const matchesRef = useRef(matches);
+  useEffect(() => { matchesRef.current = matches; }, [matches]);
+
+  // Real cross-user likes/matches: load who already liked me / who I already liked, resolve mutual matches.
+  useEffect(() => {
+    if (!twinventureDb || !myAuthId || syncStatus !== "ready") return;
+    Promise.all([
+      twinventureDb.from("likes").select("from_id").eq("to_id", myAuthId),
+      twinventureDb.from("likes").select("to_id").eq("from_id", myAuthId)
+    ]).then(([likedMeRes, iLikedRes]) => {
+      const likedMeIds = new Set((likedMeRes.data || []).map(r => r.from_id));
+      const iLikedIds = new Set((iLikedRes.data || []).map(r => r.to_id));
+      likedMeIds.forEach(id => {
+        if (!iLikedIds.has(id)) return;
+        const p = DEMO_PROFILES.find(x => x.id === id);
+        if (p) addMatch(p);
+      });
+      const pending = [...likedMeIds].filter(id => !iLikedIds.has(id)).map(id => DEMO_PROFILES.find(x => x.id === id)).filter(Boolean);
+      if (pending.length) setReceivedLikes(prev => {
+        const existing = new Set(prev.map(x => x.id));
+        const toAdd = pending.filter(p => !existing.has(p.id));
+        return toAdd.length ? [...toAdd, ...prev] : prev;
+      });
+    });
+  }, [myAuthId, syncStatus]);
+
+  // Realtime: someone likes me in real time.
+  useEffect(() => {
+    if (!twinventureDb || !myAuthId) return;
+    const channel = twinventureDb.channel("likes-in-" + myAuthId)
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"likes", filter:`to_id=eq.${myAuthId}` }, (payload) => {
+        const fromId = payload.new.from_id;
+        const p = DEMO_PROFILES.find(x => x.id === fromId);
+        if (!p) return;
+        twinventureDb.from("likes").select("id").eq("from_id", myAuthId).eq("to_id", fromId).then(({ data }) => {
+          if (data && data.length) {
+            triggerMatch(p);
+            setReceivedLikes(prev => prev.filter(x => x.id !== fromId));
+          } else {
+            setReceivedLikes(prev => prev.some(x => x.id === p.id) ? prev : [p, ...prev]);
+            setLikeToast(p);
+            setTimeout(() => setLikeToast(t => (t && t.id === p.id ? null : t)), 5000);
+          }
+        });
+      })
+      .subscribe();
+    return () => { twinventureDb.removeChannel(channel); };
+  }, [myAuthId]);
+
+  // Realtime: real messages arriving from another real user.
+  useEffect(() => {
+    if (!twinventureDb || !myAuthId) return;
+    const handleInsert = (payload) => {
+      const row = payload.new;
+      if (row.sender_id === myAuthId) return;
+      const partnerId = row.user_a === myAuthId ? row.user_b : row.user_a;
+      appendMessage(partnerId, { from:"them", text:row.body, id:row.id });
+      if (activeChatIdRef.current !== partnerId) {
+        const match = matchesRef.current.find(m => m.id === partnerId) || DEMO_PROFILES.find(p => p.id === partnerId);
+        if (match) {
+          setUnreadCounts(prev => ({ ...prev, [partnerId]: (prev[partnerId] || 0) + 1 }));
+          setToast({ match, text:row.body });
+          setTimeout(() => setToast(t => (t && t.match.id === partnerId ? null : t)), 5000);
+        }
+      }
+    };
+    const ch1 = twinventureDb.channel("msgs-a-" + myAuthId).on("postgres_changes", { event:"INSERT", schema:"public", table:"messages", filter:`user_a=eq.${myAuthId}` }, handleInsert).subscribe();
+    const ch2 = twinventureDb.channel("msgs-b-" + myAuthId).on("postgres_changes", { event:"INSERT", schema:"public", table:"messages", filter:`user_b=eq.${myAuthId}` }, handleInsert).subscribe();
+    return () => { twinventureDb.removeChannel(ch1); twinventureDb.removeChannel(ch2); };
+  }, [myAuthId]);
   const sendLike = (p) => {
+    if (p.isCloud && myAuthId) {
+      twinventureDb.from("likes").insert([{ from_id: myAuthId, to_id: p.id }]).then(({ error }) => {
+        if (error && error.code !== "23505") console.error("Twinventure: error sending like", error);
+      });
+      const alreadyLikedMe = receivedLikes.some(x => x.id === p.id);
+      if (alreadyLikedMe) {
+        triggerMatch(p);
+        setReceivedLikes(prev => prev.filter(x => x.id !== p.id));
+        return;
+      }
+      setSentLikes(prev => prev.includes(p.id) ? prev : [...prev, p.id]);
+      return;
+    }
     const alreadyLikedMe = receivedLikes.some(x => x.id === p.id);
     if (alreadyLikedMe) {
       triggerMatch(p);
@@ -1984,7 +2091,16 @@ function App() {
       setSentLikes(prev => prev.filter(id => id !== p.id));
     }
   };
-  const likeBack = (p) => { triggerMatch(p); setReceivedLikes(prev => prev.filter(x => x.id !== p.id)); setSentLikes(prev => prev.filter(x => x !== p.id)); };
+  const likeBack = (p) => {
+    if (p.isCloud && myAuthId) {
+      twinventureDb.from("likes").insert([{ from_id: myAuthId, to_id: p.id }]).then(({ error }) => {
+        if (error && error.code !== "23505") console.error("Twinventure: error sending like", error);
+      });
+    }
+    triggerMatch(p);
+    setReceivedLikes(prev => prev.filter(x => x.id !== p.id));
+    setSentLikes(prev => prev.filter(x => x !== p.id));
+  };
   const passReceived = (id) => setReceivedLikes(prev => prev.filter(x => x.id !== id));
   const undoMatch = (id) => { setMatches(prev => prev.filter(x => x.id !== id)); setSentLikes(prev => prev.filter(x => x !== id)); };
   const passProfile = (id) => setPassedIds(prev => prev.includes(id) ? prev : [...prev, id]);
@@ -2026,11 +2142,11 @@ function App() {
       setDataVersion(v => v + 1);
       setScreen("swipe");
     } }),
-    screen==="swipe" && h(SwipeDeck, { onMatch:sendLike, onUndoMatch:undoMatch, onPassProfile:passProfile, onUndoPass:undoPass, onOpenMap:(filtered)=>{ setMapProfiles(filtered); setScreen("map"); }, matchCount:matches.length, blockedIds, passedIds, matchedIds:matches.map(m=>m.id), sentLikes, liveUpdates, me, initialSearchOpen:reopenSearchOnSwipe, industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters, recentSearches, setRecentSearches }),
+    screen==="swipe" && h(SwipeDeck, { key:"swipe-"+dataVersion, onMatch:sendLike, onUndoMatch:undoMatch, onPassProfile:passProfile, onUndoPass:undoPass, onOpenMap:(filtered)=>{ setMapProfiles(filtered); setScreen("map"); }, matchCount:matches.length, blockedIds, passedIds, matchedIds:matches.map(m=>m.id), sentLikes, liveUpdates, me, initialSearchOpen:reopenSearchOnSwipe, industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters, recentSearches, setRecentSearches }),
     screen==="map" && h(MapScreen, { blockedIds, liveUpdates, me, matchedIds:matches.map(m=>m.id), industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters }),
     screen==="likes" && h(ReceivedLikes, { likes:receivedLikes, onLikeBack:likeBack, onPass:passReceived }),
     screen==="views" && h(ProfileViews, { views:profileViews, unlocked:premiumUnlocked, onUnlock:()=>setPremiumUnlocked(true), onBack:()=>setScreen("swipe"), me, liveUpdates }),
-    screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
+    screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ if (m.isCloud && myAuthId) loadCloudMessages(m); else ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
     screen==="chat" && activeChat && h(Chat, { match:activeChat, messages: chatMessages[activeChat.id] || [], onSend:(text)=>sendMessage(activeChat.id, text), onBack:()=>setScreen("chatlist"), onDeleteChat:deleteChat, onBlock:blockUser, onReport:reportUser, liveUpdates, me }),
     screen==="profile" && me && h(ProfileScreen, { me, onEdit:()=>setScreen("editprofile"), onSettings:()=>setScreen("settings") }),
     screen==="editprofile" && h(Onboarding, { initial: me, title:"Edit profile", ctaLabel:"Save changes", onDone:(p)=>{
