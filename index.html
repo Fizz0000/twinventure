@@ -485,6 +485,15 @@ function initialsOf(name, surname) {
   return (a+b).toUpperCase() || "?";
 }
 
+// Demo/bot profiles always use small numeric ids (1, 2, 3...); real signed-up
+// users always get a string id (their Supabase auth UUID). Checking the id's
+// type (instead of relying on an "isCloud" flag that older, already-saved
+// matches/likes in localStorage won't have) reliably tells real users apart
+// from bots, including for data saved before this distinction existed.
+function isRealUserId(id) {
+  return typeof id === "string";
+}
+
 function Avatar({ photo, initials, size }) {
   const s = size || 68;
   return h("div", { style:{ width:s, height:s, borderRadius:"50%", padding:3, background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 } },
@@ -1024,7 +1033,7 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   useEffect(() => {
-    if (!twinventureDb || !p.isCloud) return;
+    if (!twinventureDb || !isRealUserId(p.id)) return;
     setReviewsLoading(true);
     twinventureDb.from("reviews").select("*").eq("to_id", p.id).order("created_at", { ascending:false }).then(({ data, error }) => {
       setReviewsLoading(false);
@@ -1103,7 +1112,7 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
             )
           )))
         ),
-        p.isCloud && h("div", { style:{ marginBottom: (allowActions || (canReview && myAuthId)) ? 20 : 0 } },
+        isRealUserId(p.id) && h("div", { style:{ marginBottom: (allowActions || (canReview && myAuthId)) ? 20 : 0 } },
           h("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 } },
             h("p", { style:{ fontSize:12, color:MUTED, fontWeight:700, margin:0 } }, "Reviews" + (reviews.length ? " (" + reviews.length + ")" : "")),
             reviews.length > 0 && h("span", { style:{ fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "\u2605 " + avgRating.toFixed(1))
@@ -1984,7 +1993,7 @@ function App() {
   const ensureSeeded = (matchId, profile) => setChatMessages(prev => prev[matchId] ? prev : { ...prev, [matchId]: [{ from:"them", text:"Hi! I saw you're also starting from scratch in " + (profile.tags && profile.tags[0]) + ". Where would you like to expand exactly?" }] });
   const pairIds = (a, b) => (a < b ? { user_a:a, user_b:b } : { user_a:b, user_b:a });
   const loadCloudMessages = (match) => {
-    if (!twinventureDb || !myAuthId || !match.isCloud) return;
+    if (!twinventureDb || !myAuthId || !isRealUserId(match.id)) return;
     const { user_a, user_b } = pairIds(myAuthId, match.id);
     twinventureDb.from("messages").select("*").eq("user_a", user_a).eq("user_b", user_b).order("created_at", { ascending:true }).then(({ data, error }) => {
       if (error) { console.error("Twinventure: error loading messages", error); return; }
@@ -1993,7 +2002,7 @@ function App() {
   };
   const sendMessage = (matchId, text) => {
     const match = matches.find(m => m.id === matchId);
-    if (match && match.isCloud && myAuthId) {
+    if (match && isRealUserId(match.id) && myAuthId) {
       appendMessage(matchId, { from:"me", text });
       const { user_a, user_b } = pairIds(myAuthId, matchId);
       twinventureDb.from("messages").insert([{ user_a, user_b, sender_id:myAuthId, body:text }]).then(({ error }) => {
@@ -2064,7 +2073,7 @@ function App() {
       "I think we could really build something together.",
     ];
     const timer = setInterval(() => {
-      const demoMatches = matches.filter(m => !m.isCloud);
+      const demoMatches = matches.filter(m => !isRealUserId(m.id));
       if (!notificationsEnabled || demoMatches.length === 0) return;
       const m = demoMatches[Math.floor(Math.random() * demoMatches.length)];
       const text = DEMO_MESSAGES[Math.floor(Math.random() * DEMO_MESSAGES.length)];
@@ -2170,7 +2179,7 @@ function App() {
     return () => { twinventureDb.removeChannel(channel); };
   }, [myAuthId]);
   const sendLike = (p) => {
-    if (p.isCloud && myAuthId) {
+    if (isRealUserId(p.id) && myAuthId) {
       twinventureDb.from("likes").insert([{ from_id: myAuthId, to_id: p.id }]).then(({ error }) => {
         if (error && error.code !== "23505") console.error("Twinventure: error sending like", error);
       });
@@ -2196,7 +2205,7 @@ function App() {
     }
   };
   const likeBack = (p) => {
-    if (p.isCloud && myAuthId) {
+    if (isRealUserId(p.id) && myAuthId) {
       twinventureDb.from("likes").insert([{ from_id: myAuthId, to_id: p.id }]).then(({ error }) => {
         if (error && error.code !== "23505") console.error("Twinventure: error sending like", error);
       });
@@ -2250,7 +2259,7 @@ function App() {
     screen==="map" && h(MapScreen, { blockedIds, liveUpdates, me, matchedIds:matches.map(m=>m.id), industryFilters, setIndustryFilters, languageFilters, setLanguageFilters, roleFilters, setRoleFilters, locationFilters, setLocationFilters }),
     screen==="likes" && h(ReceivedLikes, { likes:receivedLikes, onLikeBack:likeBack, onPass:passReceived }),
     screen==="views" && h(ProfileViews, { views:profileViews, unlocked:premiumUnlocked, onUnlock:()=>setPremiumUnlocked(true), onBack:()=>setScreen("swipe"), me, liveUpdates }),
-    screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ if (m.isCloud && myAuthId) loadCloudMessages(m); else ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
+    screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ if (isRealUserId(m.id) && myAuthId) loadCloudMessages(m); else ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
     screen==="chat" && activeChat && h(Chat, { match:activeChat, messages: chatMessages[activeChat.id] || [], onSend:(text)=>sendMessage(activeChat.id, text), onBack:()=>setScreen("chatlist"), onDeleteChat:deleteChat, onBlock:blockUser, onReport:reportUser, liveUpdates, me, myAuthId }),
     screen==="profile" && me && h(ProfileScreen, { me, onEdit:()=>setScreen("editprofile"), onSettings:()=>setScreen("settings") }),
     screen==="editprofile" && h(Onboarding, { initial: me, title:"Edit profile", ctaLabel:"Save changes", onDone:(p)=>{
