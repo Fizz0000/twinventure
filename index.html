@@ -1031,6 +1031,16 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
   const [myRating, setMyRating] = useState(0);
   const [myReviewText, setMyReviewText] = useState("");
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  // Resolve my own auth id independently, in case it hasn't reached this
+  // component via props yet (e.g. the app-level lookup is still in flight).
+  const [resolvedAuthId, setResolvedAuthId] = useState(myAuthId || null);
+  useEffect(() => {
+    if (myAuthId) { setResolvedAuthId(myAuthId); return; }
+    if (!twinventureDb || !canReview) return;
+    twinventureDb.auth.getUser().then(({ data }) => {
+      if (data && data.user) setResolvedAuthId(data.user.id);
+    }).catch(() => {});
+  }, [myAuthId, canReview]);
 
   useEffect(() => {
     if (!twinventureDb || !isRealUserId(p.id)) return;
@@ -1044,13 +1054,13 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
   const avgRating = reviews.length ? (reviews.reduce((s,r)=>s+r.rating,0)/reviews.length) : 0;
 
   const submitReview = () => {
-    if (!twinventureDb || !myAuthId || !myRating) return;
-    const newReview = { from_id:myAuthId, to_id:p.id, rating:myRating, body:myReviewText.trim() || null, created_at:new Date().toISOString() };
+    if (!twinventureDb || !resolvedAuthId || !myRating) return;
+    const newReview = { from_id:resolvedAuthId, to_id:p.id, rating:myRating, body:myReviewText.trim() || null, created_at:new Date().toISOString() };
     twinventureDb.from("reviews").upsert([newReview], { onConflict:"from_id,to_id" }).then(({ error }) => {
       if (!error) {
         setReviewSubmitted(true);
         setShowReviewForm(false);
-        setReviews(prev => [newReview, ...prev.filter(r => r.from_id !== myAuthId)]);
+        setReviews(prev => [newReview, ...prev.filter(r => r.from_id !== resolvedAuthId)]);
       }
     });
   };
@@ -1112,21 +1122,21 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
             )
           )))
         ),
-        isRealUserId(p.id) && h("div", { style:{ marginBottom: (allowActions || (canReview && myAuthId)) ? 20 : 0 } },
+        isRealUserId(p.id) && h("div", { style:{ marginBottom: (allowActions || (canReview && resolvedAuthId)) ? 20 : 0 } },
           h("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 } },
             h("p", { style:{ fontSize:12, color:MUTED, fontWeight:700, margin:0 } }, "Reviews" + (reviews.length ? " (" + reviews.length + ")" : "")),
             reviews.length > 0 && h("span", { style:{ fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "\u2605 " + avgRating.toFixed(1))
           ),
           reviewsLoading && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "Loading..."),
           !reviewsLoading && reviews.length === 0 && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "No reviews yet."),
-          !reviewsLoading && reviews.length > 0 && h("div", { style:{ display:"flex", flexDirection:"column", gap:8, marginBottom: (canReview && myAuthId) ? 10 : 0 } },
+          !reviewsLoading && reviews.length > 0 && h("div", { style:{ display:"flex", flexDirection:"column", gap:8, marginBottom: (canReview && resolvedAuthId) ? 10 : 0 } },
             reviews.slice(0, 5).map((r, i) => h("div", { key:r.id || (r.from_id + "-" + i), style:{ background:"#F9F7FC", borderRadius:12, padding:10 } },
               h("p", { style:{ margin:"0 0 4px", fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "\u2605".repeat(r.rating) + "\u2606".repeat(5 - r.rating)),
               r.body && h("p", { style:{ margin:0, fontSize:13, color:INK, lineHeight:1.5 } }, r.body)
             ))
           ),
-          canReview && myAuthId && !showReviewForm && h("button", { onClick:()=>{ setShowReviewForm(true); setMyRating(myRating || 0); }, style:{ border:"none", background:"none", padding:0, color:CORAL, fontSize:12.5, fontWeight:700, cursor:"pointer" } }, reviewSubmitted ? "Edit your review" : "Leave a review"),
-          canReview && myAuthId && showReviewForm && h("div", { style:{ background:"#F9F7FC", borderRadius:12, padding:12, marginTop:6 } },
+          canReview && resolvedAuthId && !showReviewForm && h("button", { onClick:()=>{ setShowReviewForm(true); setMyRating(myRating || 0); }, style:{ border:"none", background:"none", padding:0, color:CORAL, fontSize:12.5, fontWeight:700, cursor:"pointer" } }, reviewSubmitted ? "Edit your review" : "Leave a review"),
+          canReview && resolvedAuthId && showReviewForm && h("div", { style:{ background:"#F9F7FC", borderRadius:12, padding:12, marginTop:6 } },
             h("div", { style:{ display:"flex", gap:4, marginBottom:8 } },
               [1,2,3,4,5].map(n => h("button", { key:n, type:"button", onClick:()=>setMyRating(n), style:{ border:"none", background:"none", fontSize:22, padding:0, cursor:"pointer", color: n <= myRating ? "#F5A623" : "#DDD8CE" } }, "\u2605"))
             ),
