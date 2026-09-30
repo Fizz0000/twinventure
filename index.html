@@ -1448,8 +1448,8 @@ function MapScreen({ blockedIds, liveUpdates, me, matchedIds, industryFilters, s
   useEffect(() => {
     if (viewMode !== "map" || !containerRef.current || typeof L === "undefined") return;
     const map = L.map(containerRef.current, { zoomControl:true, maxZoom:12 }).setView([20, 10], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors", maxZoom:12
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom:12, subdomains:"abcd"
     }).addTo(map);
 
     const clusterIconFn = function(cluster) {
