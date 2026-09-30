@@ -1003,7 +1003,7 @@ function ResultRow({ profile, onLike, onView, liked, me }) {
   );
 }
 
-function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpdates, me }) {
+function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpdates, me, canReview, myAuthId }) {
   const photos = (profile.photos && profile.photos.length) ? profile.photos : (profile.photo ? [profile.photo] : []);
   const [idx, setIdx] = useState(0);
   const [showMutuals, setShowMutuals] = useState(false);
@@ -1015,6 +1015,36 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
   const mySeeks = (me && me.seeks) || [];
   const next = () => setIdx(i => Math.min(i + 1, photos.length - 1));
   const prev = () => setIdx(i => Math.max(i - 1, 0));
+
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [myRating, setMyRating] = useState(0);
+  const [myReviewText, setMyReviewText] = useState("");
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+
+  useEffect(() => {
+    if (!twinventureDb || !p.isCloud) return;
+    setReviewsLoading(true);
+    twinventureDb.from("reviews").select("*").eq("to_id", p.id).order("created_at", { ascending:false }).then(({ data, error }) => {
+      setReviewsLoading(false);
+      if (!error) setReviews(data || []);
+    });
+  }, [p.id]);
+
+  const avgRating = reviews.length ? (reviews.reduce((s,r)=>s+r.rating,0)/reviews.length) : 0;
+
+  const submitReview = () => {
+    if (!twinventureDb || !myAuthId || !myRating) return;
+    const newReview = { from_id:myAuthId, to_id:p.id, rating:myRating, body:myReviewText.trim() || null, created_at:new Date().toISOString() };
+    twinventureDb.from("reviews").upsert([newReview], { onConflict:"from_id,to_id" }).then(({ error }) => {
+      if (!error) {
+        setReviewSubmitted(true);
+        setShowReviewForm(false);
+        setReviews(prev => [newReview, ...prev.filter(r => r.from_id !== myAuthId)]);
+      }
+    });
+  };
 
   return h("div", { onClick:onClose, style:{ position:"fixed", inset:0, background:"rgba(42,33,64,0.55)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:16, animation:"tvFadeIn 0.2s ease" } },
     h("div", { onClick:e=>e.stopPropagation(), style:{ background:CARD, borderRadius:24, width:"100%", maxWidth:380, maxHeight:"92vh", overflowY:"auto", boxShadow:SHADOW, animation:"tvPopIn 0.25s ease" } },
@@ -1072,6 +1102,31 @@ function ProfileDetail({ profile, onClose, onLike, onPass, allowActions, liveUpd
               h("p", { style:{ margin:0, fontSize:11, color:MUTED } }, u.time)
             )
           )))
+        ),
+        p.isCloud && h("div", { style:{ marginBottom: (allowActions || (canReview && myAuthId)) ? 20 : 0 } },
+          h("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 } },
+            h("p", { style:{ fontSize:12, color:MUTED, fontWeight:700, margin:0 } }, "Reviews" + (reviews.length ? " (" + reviews.length + ")" : "")),
+            reviews.length > 0 && h("span", { style:{ fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "\u2605 " + avgRating.toFixed(1))
+          ),
+          reviewsLoading && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "Loading..."),
+          !reviewsLoading && reviews.length === 0 && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "No reviews yet."),
+          !reviewsLoading && reviews.length > 0 && h("div", { style:{ display:"flex", flexDirection:"column", gap:8, marginBottom: (canReview && myAuthId) ? 10 : 0 } },
+            reviews.slice(0, 5).map((r, i) => h("div", { key:r.id || (r.from_id + "-" + i), style:{ background:"#F9F7FC", borderRadius:12, padding:10 } },
+              h("p", { style:{ margin:"0 0 4px", fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "\u2605".repeat(r.rating) + "\u2606".repeat(5 - r.rating)),
+              r.body && h("p", { style:{ margin:0, fontSize:13, color:INK, lineHeight:1.5 } }, r.body)
+            ))
+          ),
+          canReview && myAuthId && !showReviewForm && h("button", { onClick:()=>{ setShowReviewForm(true); setMyRating(myRating || 0); }, style:{ border:"none", background:"none", padding:0, color:CORAL, fontSize:12.5, fontWeight:700, cursor:"pointer" } }, reviewSubmitted ? "Edit your review" : "Leave a review"),
+          canReview && myAuthId && showReviewForm && h("div", { style:{ background:"#F9F7FC", borderRadius:12, padding:12, marginTop:6 } },
+            h("div", { style:{ display:"flex", gap:4, marginBottom:8 } },
+              [1,2,3,4,5].map(n => h("button", { key:n, type:"button", onClick:()=>setMyRating(n), style:{ border:"none", background:"none", fontSize:22, padding:0, cursor:"pointer", color: n <= myRating ? "#F5A623" : "#DDD8CE" } }, "\u2605"))
+            ),
+            h("textarea", { value:myReviewText, onChange:e=>setMyReviewText(e.target.value), rows:3, placeholder:"How was working with " + p.name + "?", style:{ width:"100%", border:`1.5px solid ${BORDER}`, borderRadius:10, padding:8, fontSize:13, fontFamily:"inherit", boxSizing:"border-box", marginBottom:8 } }),
+            h("div", { style:{ display:"flex", gap:8 } },
+              h("button", { onClick:()=>setShowReviewForm(false), style:{ flex:1, padding:"8px 0", borderRadius:10, border:`1px solid ${BORDER}`, background:CARD, fontSize:12.5, color:MUTED, fontWeight:600 } }, "Cancel"),
+              h("button", { onClick:submitReview, disabled: !myRating, style:{ flex:1, padding:"8px 0", borderRadius:10, border:"none", background: myRating ? GRADIENT : "#DDD8CE", color:"#fff", fontSize:12.5, fontWeight:700 } }, "Submit")
+            )
+          )
         ),
         allowActions && h("div", { style:{ display:"flex", justifyContent:"center", gap:20 } },
           h("button", { onClick:()=>{ onPass(); onClose(); }, style:{ width:54, height:54, borderRadius:"50%", border:"none", background:"#F4F1F8", fontSize:20, color:MUTED } }, "\u2715"),
@@ -1283,7 +1338,7 @@ function ChatList({ matches, unreadCounts, onOpen }) {
   );
 }
 
-function Chat({ match, messages, onSend, onBack, onDeleteChat, onBlock, onReport, liveUpdates, me }) {
+function Chat({ match, messages, onSend, onBack, onDeleteChat, onBlock, onReport, liveUpdates, me, myAuthId }) {
   const [input, setInput] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -1343,7 +1398,39 @@ function Chat({ match, messages, onSend, onBack, onDeleteChat, onBlock, onReport
       h("input", { value:input, onChange:e=>setInput(e.target.value), onKeyDown:e=>e.key==="Enter"&&send(), placeholder:"Write a message", style:{ flex:1, padding:11, borderRadius:20, border:`1.5px solid ${BORDER}`, fontSize:13.5, boxSizing:"border-box" } }),
       h("button", { onClick:send, style:{ width:42, height:42, borderRadius:"50%", border:"none", background:GRADIENT, color:"#fff" } }, "\u27a4")
     ),
-    viewingProfile && h(ProfileDetail, { profile:match, onClose:()=>setViewingProfile(false), allowActions:false, liveUpdates, me })
+    viewingProfile && h(ProfileDetail, { profile:match, onClose:()=>setViewingProfile(false), allowActions:false, liveUpdates, me, canReview:true, myAuthId })
+  );
+}
+
+function ReviewsSummary({ me }) {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!twinventureDb || !me || !me.id) return;
+    setLoading(true);
+    twinventureDb.from("reviews").select("*").eq("to_id", me.id).order("created_at", { ascending:false }).then(({ data, error }) => {
+      setLoading(false);
+      if (!error) setReviews(data || []);
+    });
+  }, [me && me.id]);
+
+  if (!twinventureDb) return null;
+  const avg = reviews.length ? (reviews.reduce((s,r)=>s+r.rating,0)/reviews.length) : 0;
+
+  return h("div", { style:{ background:CARD, borderRadius:16, boxShadow:SHADOW, padding:16, marginTop:16 } },
+    h("div", { style:{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 } },
+      h("p", { style:{ fontSize:14, fontWeight:800, color:INK, margin:0 } }, "Your reviews"),
+      reviews.length > 0 && h("span", { style:{ fontSize:13, color:PLUM, fontWeight:700 } }, "★ " + avg.toFixed(1) + " (" + reviews.length + ")")
+    ),
+    loading && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "Loading..."),
+    !loading && reviews.length === 0 && h("p", { style:{ fontSize:12.5, color:MUTED, margin:0 } }, "No reviews yet. They'll show up here as soon as someone you've worked with leaves you one."),
+    !loading && reviews.length > 0 && h("div", { style:{ display:"flex", flexDirection:"column", gap:8 } },
+      reviews.slice(0,5).map(r => h("div", { key:r.id, style:{ background:"#F9F7FC", borderRadius:12, padding:10 } },
+        h("p", { style:{ margin:"0 0 4px", fontSize:12.5, color:"#F5A623", fontWeight:700 } }, "★".repeat(r.rating) + "☆".repeat(5-r.rating)),
+        r.body && h("p", { style:{ margin:0, fontSize:13, color:INK, lineHeight:1.5 } }, r.body)
+      ))
+    )
   );
 }
 
@@ -1352,7 +1439,8 @@ function ProfileScreen({ me, onEdit, onSettings }) {
     h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "Your profile"),
     h("div", { style:{ display:"flex", justifyContent:"center" } }, h(ProfileCard, { profile: me, hideMutuals:true })),
     h("button", { onClick:onEdit, style:{ width:"100%", marginTop:16, padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:PLUM, boxShadow:SHADOW } }, "Edit profile"),
-    h("button", { onClick:onSettings, style:{ width:"100%", marginTop:10, padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:INK, boxShadow:SHADOW } }, "Settings")
+    h("button", { onClick:onSettings, style:{ width:"100%", marginTop:10, padding:13, borderRadius:14, border:"none", background:CARD, fontSize:14, fontWeight:700, color:INK, boxShadow:SHADOW } }, "Settings"),
+    h(ReviewsSummary, { me })
   );
 }
 
@@ -1880,6 +1968,7 @@ function App() {
   const [profileViews, setProfileViews] = useState(PROFILE_VIEWS_SEED);
   const [viewToast, setViewToast] = useState(null);
   const [likeToast, setLikeToast] = useState(null);
+  const [reviewToast, setReviewToast] = useState(null);
   const [unseenViews, setUnseenViews] = useState(0);
 
   useEffect(() => { saveLS("tv_me", me); }, [me]);
@@ -2065,6 +2154,21 @@ function App() {
     const ch2 = twinventureDb.channel("msgs-b-" + myAuthId).on("postgres_changes", { event:"INSERT", schema:"public", table:"messages", filter:`user_b=eq.${myAuthId}` }, handleInsert).subscribe();
     return () => { twinventureDb.removeChannel(ch1); twinventureDb.removeChannel(ch2); };
   }, [myAuthId]);
+
+  // Realtime: someone leaves me a review.
+  useEffect(() => {
+    if (!twinventureDb || !myAuthId) return;
+    const channel = twinventureDb.channel("reviews-in-" + myAuthId)
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"reviews", filter:`to_id=eq.${myAuthId}` }, (payload) => {
+        const fromId = payload.new.from_id;
+        const p = DEMO_PROFILES.find(x => x.id === fromId);
+        const entry = { name: p ? p.name : "Someone", photo: p ? p.photo : null, initials: p ? p.initials : "?", rating: payload.new.rating };
+        setReviewToast(entry);
+        setTimeout(() => setReviewToast(t => (t === entry ? null : t)), 6000);
+      })
+      .subscribe();
+    return () => { twinventureDb.removeChannel(channel); };
+  }, [myAuthId]);
   const sendLike = (p) => {
     if (p.isCloud && myAuthId) {
       twinventureDb.from("likes").insert([{ from_id: myAuthId, to_id: p.id }]).then(({ error }) => {
@@ -2147,7 +2251,7 @@ function App() {
     screen==="likes" && h(ReceivedLikes, { likes:receivedLikes, onLikeBack:likeBack, onPass:passReceived }),
     screen==="views" && h(ProfileViews, { views:profileViews, unlocked:premiumUnlocked, onUnlock:()=>setPremiumUnlocked(true), onBack:()=>setScreen("swipe"), me, liveUpdates }),
     screen==="chatlist" && h(ChatList, { matches, unreadCounts, onOpen:(m)=>{ if (m.isCloud && myAuthId) loadCloudMessages(m); else ensureSeeded(m.id, m); setActiveChat(m); setScreen("chat"); setUnreadCounts(prev=>{ const c={...prev}; delete c[m.id]; return c; }); } }),
-    screen==="chat" && activeChat && h(Chat, { match:activeChat, messages: chatMessages[activeChat.id] || [], onSend:(text)=>sendMessage(activeChat.id, text), onBack:()=>setScreen("chatlist"), onDeleteChat:deleteChat, onBlock:blockUser, onReport:reportUser, liveUpdates, me }),
+    screen==="chat" && activeChat && h(Chat, { match:activeChat, messages: chatMessages[activeChat.id] || [], onSend:(text)=>sendMessage(activeChat.id, text), onBack:()=>setScreen("chatlist"), onDeleteChat:deleteChat, onBlock:blockUser, onReport:reportUser, liveUpdates, me, myAuthId }),
     screen==="profile" && me && h(ProfileScreen, { me, onEdit:()=>setScreen("editprofile"), onSettings:()=>setScreen("settings") }),
     screen==="editprofile" && h(Onboarding, { initial: me, title:"Edit profile", ctaLabel:"Save changes", onDone:(p)=>{
       setMe(p);
@@ -2208,6 +2312,17 @@ function App() {
       h("div", { style:{ flex:1, minWidth:0 } },
         h("p", { style:{ margin:"0 0 1px", fontSize:12.5, fontWeight:800, color:INK } }, likeToast.name + " liked you"),
         h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, "Tap to see who chose you")
+      )
+    ),
+    reviewToast && h(ToastBanner, {
+      topOffset: 14 + (toast ? 70 : 0) + (viewToast ? 70 : 0) + (likeToast ? 70 : 0),
+      onClick:()=>{ setScreen("profile"); setReviewToast(null); },
+      onDismiss:()=>setReviewToast(null)
+    },
+      h(Avatar, { photo:reviewToast.photo, initials:reviewToast.initials, size:38 }),
+      h("div", { style:{ flex:1, minWidth:0 } },
+        h("p", { style:{ margin:"0 0 1px", fontSize:12.5, fontWeight:800, color:INK } }, reviewToast.name + " left you a review"),
+        h("p", { style:{ margin:0, fontSize:12, color:MUTED } }, "★".repeat(reviewToast.rating) + "☆".repeat(5 - reviewToast.rating))
       )
     )
   );
