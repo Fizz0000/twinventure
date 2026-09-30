@@ -1555,8 +1555,8 @@ function MapScreen({ blockedIds, liveUpdates, me, matchedIds, industryFilters, s
   useEffect(() => {
     if (viewMode !== "map" || !containerRef.current || typeof L === "undefined") return;
     const map = L.map(containerRef.current, { zoomControl:true, maxZoom:12 }).setView([20, 10], 2);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom:12, subdomains:"abcd"
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "Tiles &copy; Esri", maxZoom:12
     }).addTo(map);
 
     const clusterIconFn = function(cluster) {
