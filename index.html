@@ -1234,7 +1234,7 @@ function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap,
   const profile = frozenProfile || (available.length ? available[index % available.length] : null);
 
   const searchResults = available.filter(p => matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
-  const mapResults = DEMO_PROFILES.filter(p => !blockedIds.includes(p.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
+  const mapResults = DEMO_PROFILES.filter(p => p.showOnMap !== false && !blockedIds.includes(p.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
   const filtersActive = !!(industryFilters.length || languageFilters.length || roleFilters.length || locationFilters.length);
 
   const toggleFilter = (list, setList, v) => setList(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
@@ -1604,7 +1604,7 @@ function MapScreen({ blockedIds, liveUpdates, me, matchedIds, industryFilters, s
   const LIST_CAP = 15;
   const toggleFilter = (list, setList, v) => setList(list.includes(v) ? list.filter(x => x !== v) : [...list, v]);
 
-  const profiles = DEMO_PROFILES.filter(p => !blockedIds.includes(p.id) && (!me || p.id !== me.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
+  const profiles = DEMO_PROFILES.filter(p => p.showOnMap !== false && !blockedIds.includes(p.id) && (!me || p.id !== me.id) && matchesFilters(p, industryFilters, languageFilters, roleFilters, locationFilters));
   const filterKey = JSON.stringify([industryFilters, languageFilters, roleFilters, locationFilters, blockedIds]);
 
   useEffect(() => {
@@ -1748,7 +1748,7 @@ function MapScreen({ blockedIds, liveUpdates, me, matchedIds, industryFilters, s
   );
 }
 
-function SettingsScreen({ notificationsEnabled, onToggleNotif, blockedIds, onUnblock, passedIds, onResetPassed, onLogout, onDeleteAccount, onBack }) {
+function SettingsScreen({ notificationsEnabled, onToggleNotif, showOnMap, onToggleShowOnMap, blockedIds, onUnblock, passedIds, onResetPassed, onLogout, onDeleteAccount, onBack }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const blockedProfiles = blockedIds.map(id => ALL_KNOWN_PROFILES.find(p => p.id === id)).filter(Boolean);
   const passedProfiles = passedIds.map(id => ALL_KNOWN_PROFILES.find(p => p.id === id)).filter(Boolean);
@@ -1765,6 +1765,14 @@ function SettingsScreen({ notificationsEnabled, onToggleNotif, blockedIds, onUnb
         h("p", { style:{ margin:0, fontSize:11.5, color:MUTED } }, "Notify me about new matches and messages")
       ),
       h(Toggle, { on:notificationsEnabled, onClick:onToggleNotif })
+    ),
+
+    h("div", { style:{ background:CARD, borderRadius:16, padding:14, marginBottom:16, boxShadow:SHADOW, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10 } },
+      h("div", null,
+        h("p", { style:{ margin:"0 0 2px", fontSize:13.5, fontWeight:700, color:INK } }, "Show me on the map"),
+        h("p", { style:{ margin:0, fontSize:11.5, color:MUTED } }, showOnMap ? "Other founders can see your pin on the map" : "Your pin is hidden from the map. You can still be found in Discover.")
+      ),
+      h(Toggle, { on:showOnMap, onClick:onToggleShowOnMap })
     ),
 
     h("div", { style:{ background:CARD, borderRadius:16, padding:14, marginBottom:16, boxShadow:SHADOW } },
@@ -1963,10 +1971,13 @@ function App() {
           initials: initialsOf(row.name, row.surname),
           tags: row.tags || [], offers: row.offers || [], seeks: row.seeks || [],
           languages: row.languages || [], mindset: [], bio: row.bio, docVerified: row.doc_verified,
-          isCloud: true
+          isCloud: true,
+          showOnMap: row.show_on_map !== false
         });
         if (CITY_COORDS[row.city] === undefined && CITY_COORDS[row.city] !== 0) { /* citta senza coordinate: non comparira sulla mappa, restera visibile altrove */ }
       });
+      const mine = (data || []).find(r => me && r.id === me.id);
+      if (mine && typeof mine.show_on_map === "boolean") setShowOnMap(mine.show_on_map);
       setSyncStatus("ready");
       setDataVersion(v => v + 1);
     });
@@ -1999,6 +2010,17 @@ function App() {
   const [blockedIds, setBlockedIds] = useState(() => loadLS("tv_blocked", []));
   const [passedIds, setPassedIds] = useState(() => loadLS("tv_passed", []));
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => loadLS("tv_notif", true));
+  const [showOnMap, setShowOnMap] = useState(() => loadLS("tv_showmap", true));
+  const toggleShowOnMap = () => {
+    const next = !showOnMap;
+    setShowOnMap(next);
+    // Best-effort cloud update, kept separate from the profile upsert so a missing column can never block saving a profile.
+    if (twinventureDb && me && isRealUserId(me.id)) {
+      twinventureDb.from("profiles").update({ show_on_map: next }).eq("id", me.id).then(({ error }) => {
+        if (error) console.error("Twinventure: could not save map visibility", error);
+      });
+    }
+  };
   const [authChecked, setAuthChecked] = useState(!twinventureDb);
   const [appLang, setAppLang] = useState("en");
   const t = (key) => (I18N.en && I18N.en[key]) || key;
@@ -2052,6 +2074,7 @@ function App() {
   useEffect(() => { saveLS("tv_blocked", blockedIds); }, [blockedIds]);
   useEffect(() => { saveLS("tv_passed", passedIds); }, [passedIds]);
   useEffect(() => { saveLS("tv_notif", notificationsEnabled); }, [notificationsEnabled]);
+  useEffect(() => { saveLS("tv_showmap", showOnMap); }, [showOnMap]);
   useEffect(() => { saveLS("tv_chatmsgs", chatMessages); }, [chatMessages]);
 
   const appendMessage = (matchId, msg) => setChatMessages(prev => ({ ...prev, [matchId]: [...(prev[matchId] || []), msg] }));
@@ -2339,6 +2362,7 @@ function App() {
     }, onCancel:()=>setScreen("profile") }),
     screen==="settings" && h(SettingsScreen, {
       notificationsEnabled, onToggleNotif:()=>setNotificationsEnabled(v=>!v),
+      showOnMap, onToggleShowOnMap:toggleShowOnMap,
       blockedIds, onUnblock:unblockUser,
       passedIds, onResetPassed:resetPassed,
       onLogout:logout, onDeleteAccount:resetDemo,
