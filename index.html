@@ -1195,6 +1195,35 @@ function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap,
     return () => el.removeEventListener("touchmove", blockScroll);
   }, [dragging]);
   const [frozenProfile, setFrozenProfile] = useState(null);
+  const outerRef = useRef(null);
+  const contentRef = useRef(null);
+  const [fit, setFit] = useState({ s:1, h:null });
+
+  // The Discover screen never scrolls: lock the page while it is open.
+  useEffect(() => {
+    const html = document.documentElement, body = document.body;
+    const prev = { ho:html.style.overflow, bo:body.style.overflow, ob:body.style.overscrollBehavior };
+    html.style.overflow = "hidden"; body.style.overflow = "hidden"; body.style.overscrollBehavior = "none";
+    window.scrollTo(0, 0);
+    return () => { html.style.overflow = prev.ho; body.style.overflow = prev.bo; body.style.overscrollBehavior = prev.ob; };
+  }, []);
+
+  // Shrink the card + buttons just enough to fit the window, so nothing needs scrolling.
+  useEffect(() => {
+    const measure = () => {
+      const outer = outerRef.current, el = contentRef.current;
+      if (!outer || !el) return;
+      const top = outer.getBoundingClientRect().top;
+      const avail = window.innerHeight - top - NAV_H - 12;
+      const natural = el.offsetHeight;
+      if (!natural) return;
+      const s = Math.max(0.5, Math.min(1, avail / natural));
+      setFit(prev => (Math.abs(prev.s - s) < 0.005 && prev.h === natural * s) ? prev : { s, h: natural * s });
+    };
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", measure); };
+  }, [frozenProfile, index, searchOpen]);
 
   const [orderedIds] = useState(() => weightedShuffle(DEMO_PROFILES, me).map(p => p.id));
   const available = orderedIds.map(id => DEMO_PROFILES.find(p => p.id === id)).filter(p => p && !blockedIds.includes(p.id) && !passedIds.includes(p.id) && !matchedIds.includes(p.id) && !(sentLikes||[]).includes(p.id) && (!me || p.id !== me.id));
@@ -1232,6 +1261,16 @@ function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap,
     else if (offset < -90) commit(false);
     else setOffset(0);
   };
+
+  // Follow the mouse anywhere on screen while dragging, so a fast swipe never "drops" the card.
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (e) => onMoveEv(e);
+    const up = () => onUp();
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, [dragging, offset, hasDragged, profile]);
 
   const commit = (liked) => {
     if (!profile) return;
@@ -1280,9 +1319,16 @@ function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap,
     setViewingProfile(null);
   };
 
-  const rotation = offset / 18;
-  const likeOp = Math.min(Math.max(offset / 90, 0), 1);
-  const passOp = Math.min(Math.max(-offset / 90, 0), 1);
+  const THRESH = 90;
+  const rotation = offset / 14;
+  const likeOp = Math.min(Math.max(offset / 50, 0), 1);
+  const passOp = Math.min(Math.max(-offset / 50, 0), 1);
+  const likeReady = offset > THRESH, passReady = offset < -THRESH;
+  const LIKE_GREEN = "#1E9E64";
+  const tint = offset > 0
+    ? { bg:`rgba(30,158,100,${0.28 * likeOp})`, ring:`inset 0 0 0 ${5 * likeOp}px rgba(30,158,100,${likeOp})` }
+    : { bg:`rgba(255,107,74,${0.30 * passOp})`, ring:`inset 0 0 0 ${5 * passOp}px rgba(255,107,74,${passOp})` };
+  const stampBase = { position:"absolute", top:24, padding:"6px 14px", borderRadius:10, fontWeight:900, fontSize:30, letterSpacing:2, pointerEvents:"none", border:"4px solid" };
 
   return h("div", { style:{ maxWidth:380, margin:"0 auto" } },
     h("p", { style:{ fontSize:19, fontWeight:800, color:INK, margin:"0 0 16px" } }, "Discover"),
@@ -1293,30 +1339,35 @@ function SwipeDeck({ onMatch, onUndoMatch, onPassProfile, onUndoPass, onOpenMap,
       h("p", { style:{ fontSize:12.5, color:MUTED, margin:0, lineHeight:1.6 } }, "Come back later for new profiles, or go to Settings to restore the ones you passed on.")
     ),
 
-    profile && h("div", { style:{ position:"relative", display:"flex", justifyContent:"center" } },
-      h("div", {
-        ref:cardRef,
-        onMouseDown:onDown, onMouseMove:onMoveEv, onMouseUp:onUp, onMouseLeave:onUp,
-        onTouchStart:onDown, onTouchMove:onMoveEv, onTouchEnd:onUp,
-        style:{
-          transform:`translateX(${offset}px) rotate(${rotation}deg)`,
-          transition: noTransition ? "none" : "transform 0.26s ease",
-          touchAction:"none", userSelect:"none",
-          cursor: dragging ? "grabbing" : "grab",
-          position:"relative"
-        }
-      },
-        h(ProfileCard, { profile, me }),
-        h("div", { style:{ position:"absolute", top:20, left:20, border:`3px solid ${PLUM}`, color:PLUM, padding:"4px 10px", borderRadius:8, fontWeight:800, fontSize:17, transform:"rotate(-12deg)", opacity:likeOp, pointerEvents:"none", background:"rgba(255,255,255,0.85)" } }, "MI PIACE"),
-        h("div", { style:{ position:"absolute", top:20, right:20, border:`3px solid ${CORAL}`, color:CORAL, padding:"4px 10px", borderRadius:8, fontWeight:800, fontSize:17, transform:"rotate(12deg)", opacity:passOp, pointerEvents:"none", background:"rgba(255,255,255,0.85)" } }, "PASSO")
-      )
+    profile && h("div", { ref:outerRef, style:{ height: fit.h || "auto", overflow:"visible" } },
+     h("div", { ref:contentRef, style:{ transform:"scale(" + fit.s + ")", transformOrigin:"top center" } },
+      h("div", { style:{ position:"relative", display:"flex", justifyContent:"center" } },
+        h("div", {
+          ref:cardRef,
+          onMouseDown:onDown,
+          onTouchStart:onDown, onTouchMove:onMoveEv, onTouchEnd:onUp,
+          style:{
+            transform:`translateX(${offset}px) rotate(${rotation}deg)`,
+            transition: noTransition ? "none" : "transform 0.26s ease",
+            touchAction:"none", userSelect:"none",
+            cursor: dragging ? "grabbing" : "grab",
+            position:"relative", width:"100%", maxWidth:360
+          }
+        },
+          h(ProfileCard, { profile, me }),
+          h("div", { style:{ position:"absolute", inset:0, borderRadius:24, background:tint.bg, boxShadow:tint.ring, pointerEvents:"none" } }),
+          h("div", { style:{ ...stampBase, left:20, borderColor:LIKE_GREEN, color: likeReady ? "#fff" : LIKE_GREEN, background: likeReady ? LIKE_GREEN : "rgba(255,255,255,0.92)", transform:"rotate(-14deg) scale(" + (likeReady ? 1.12 : 1) + ")", opacity:likeOp } }, "LIKE"),
+          h("div", { style:{ ...stampBase, right:20, borderColor:CORAL, color: passReady ? "#fff" : CORAL, background: passReady ? CORAL : "rgba(255,255,255,0.92)", transform:"rotate(14deg) scale(" + (passReady ? 1.12 : 1) + ")", opacity:passOp } }, "PASS")
+        )
+      ),
+      !searchOpen && h("div", { style:{ display:"flex", justifyContent:"center", alignItems:"center", gap:16, marginTop:20 } },
+        h("button", { onClick:onUndo, disabled:!lastSwipe, title:"Undo (last swipe only)", style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:SHADOW, opacity: lastSwipe ? 1 : 0.5 } }, h(IconUndo, { size:24, color: lastSwipe ? "#D4A72C" : "#C7C2B8" })),
+        h("button", { onClick:()=>commit(false), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, fontSize:21, color:MUTED, boxShadow:SHADOW } }, "\u2715"),
+        h("button", { onClick:()=>commit(true), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 8px 20px rgba(255,107,74,0.4)" } }, h(IconBriefcase, { size:23, color:"#fff" }))
+      ),
+      !searchOpen && h("p", { style:{ textAlign:"center", fontSize:12, color:MUTED, marginTop:14 } }, "\u2190 Drag left to pass \u00b7 right to like \u2192 \u00b7 tap to view profile")
+     )
     ),
-    !searchOpen && profile && h("div", { style:{ display:"flex", justifyContent:"center", alignItems:"center", gap:16, marginTop:20 } },
-      h("button", { onClick:onUndo, disabled:!lastSwipe, title:"Torna indietro (max 1 swipe)", style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:SHADOW, opacity: lastSwipe ? 1 : 0.5 } }, h(IconUndo, { size:24, color: lastSwipe ? "#D4A72C" : "#C7C2B8" })),
-      h("button", { onClick:()=>commit(false), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:CARD, fontSize:21, color:MUTED, boxShadow:SHADOW } }, "\u2715"),
-      h("button", { onClick:()=>commit(true), style:{ width:56, height:56, borderRadius:"50%", border:"none", background:GRADIENT, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 8px 20px rgba(255,107,74,0.4)" } }, h(IconBriefcase, { size:23, color:"#fff" }))
-    ),
-    !searchOpen && profile && h("p", { style:{ textAlign:"center", fontSize:12, color:MUTED, marginTop:14 } }, "Drag the card to respond, tap to view the profile"),
     viewingProfile && h(ProfileDetail, { profile:viewingProfile, onClose:()=>setViewingProfile(null), onLike:handleLikeFromDetail, onPass:handlePassFromDetail, allowActions:true, liveUpdates, me })
   );
 }
