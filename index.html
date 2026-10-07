@@ -14,8 +14,12 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <style>
-  html { overscroll-behavior-y: none; }
-  body { background: linear-gradient(160deg, #FFF1E6 0%, #FFF8F0 45%, #F4EEFF 100%); font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 0; min-height: 100vh; overscroll-behavior-y: none; }
+  html { overscroll-behavior-y: none; height: 100%; overflow: hidden; }
+  body { background: linear-gradient(160deg, #FFF1E6 0%, #FFF8F0 45%, #F4EEFF 100%); font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 0; height: 100%; overflow: hidden; overscroll-behavior: none; }
+  #root { height: 100%; }
+  .tv-shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box; }
+  .tv-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+  .tv-body.tv-fixed { overflow-y: hidden; }
   button { cursor: pointer; font-family: inherit; }
   input, select, textarea, button { outline: none; }
   input:focus, select:focus, textarea:focus { border-color: #FF6B4A !important; }
@@ -1434,7 +1438,7 @@ function Chat({ match, messages, onSend, onBack, onDeleteChat, onBlock, onReport
     report: "Report " + match.name + "? The profile will be blocked and the report sent to our team.",
   };
 
-  return h("div", { style:{ maxWidth:380, margin:"0 auto", display:"flex", flexDirection:"column", height:"calc(100vh - " + (NAV_H + 40) + "px)", position:"relative" } },
+  return h("div", { style:{ width:"100%", maxWidth:380, margin:"0 auto", display:"flex", flexDirection:"column", flex:1, minHeight:0, position:"relative" } },
     h("div", { style:{ marginBottom:10 } }, h(BackButton, { onClick:onBack, label:"Back" })),
     h("div", { style:{ display:"flex", alignItems:"center", gap:8, marginBottom: confirmAction ? 8 : 16 } },
       h("button", { onClick:()=>setViewingProfile(true), style:{ display:"flex", alignItems:"center", gap:8, flex:1, border:"none", background:"none", padding:0, textAlign:"left", cursor:"pointer" } },
@@ -2296,14 +2300,16 @@ function App() {
 
   const showNav = screen !== "auth" && screen !== "welcome" && screen !== "language" && screen !== "onboarding" && screen !== "chat" && screen !== "editprofile" && screen !== "settings";
 
-  return h("div", { style:{ minHeight:"100vh", boxSizing:"border-box", padding: "20px 16px " + (showNav ? (NAV_H + 16) : 20) + "px" } },
-    screen !== "auth" && screen !== "welcome" && screen !== "language" && h("div", { style:{ maxWidth:380, margin:"0 auto 20px", display:"flex", justifyContent:"center", alignItems:"center", position:"relative" } },
+  const lockedScreen = screen === "swipe" || screen === "chat";
+  return h("div", { className:"tv-shell", style:{ padding:"20px 16px 0" } },
+    screen !== "auth" && screen !== "welcome" && screen !== "language" && h("div", { style:{ flex:"none", width:"100%", maxWidth:380, margin:"0 auto 20px", display:"flex", justifyContent:"center", alignItems:"center", position:"relative" } },
       h("button", { onClick:()=>setScreen("swipe"), style:{ border:"none", background:"none", padding:0, cursor:"pointer" } }, h(Logo, { size:30 })),
       screen !== "onboarding" && screen !== "editprofile" && h("button", { onClick:()=>{ setScreen("views"); setUnseenViews(0); }, style:{ position:"absolute", right:0, border:"none", background:CARD, borderRadius:"50%", width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:SHADOW } },
         h(IconBell, { size:17, color:INK }),
         unseenViews > 0 && h("span", { style:{ position:"absolute", top:-3, right:-3, minWidth:17, height:17, borderRadius:"50%", background:GRADIENT, color:"#fff", fontSize:9.5, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 3px", border:"2px solid " + CARD } }, unseenViews)
       )
     ),
+    h("div", { key:screen, className:"tv-body" + (lockedScreen ? " tv-fixed" : ""), style:{ paddingBottom: showNav ? (NAV_H + 16) : 20, ...(screen === "chat" ? { display:"flex", flexDirection:"column" } : {}) } },
     screen==="welcome" && h(WelcomeScreen, { t, onContinue:()=>{ saveLS("tv_seenWelcome", true); setScreen("auth"); } }),
     screen==="auth" && h(AuthScreen, { t, onSuccess: () => setScreen(me ? "swipe" : "onboarding") }),
     screen==="onboarding" && h(Onboarding, { onDone: async (p) => {
@@ -2337,7 +2343,8 @@ function App() {
       passedIds, onResetPassed:resetPassed,
       onLogout:logout, onDeleteAccount:resetDemo,
       onBack:()=>setScreen("profile")
-    }),
+    })
+    ),
     showNav && h(BottomNav, { screen, setScreen, onOpenMap:()=>setScreen("map"), likesCount:receivedLikes.length, unreadMsgCount: Object.values(unreadCounts).reduce((a,b)=>a+b,0), t }),
     matchCelebration && h(MatchScreen, {
       me, celebration:matchCelebration,
